@@ -927,12 +927,10 @@ async def help_command(interaction: discord.Interaction):
 @app_commands.guild_only()
 async def leaderboard(interaction: discord.Interaction):
     cid = store.latest_check_id()
-    if not cid:
-        await interaction.response.send_message(embed=simple(
-            "There hasn't been a coin check yet. Check back after the next one!", reports.BLURPLE, "🏆 Leaderboard"),
-            ephemeral=True)
-        return
     await interaction.response.defer(ephemeral=True)
+    if not cid:   # no graded check yet: show everyone's current coins
+        await send_board(interaction, reports.current_coins_board(store.members()), ephemeral=True)
+        return
     prev = store.previous_check_id(cid)
     board = reports.leaderboard_board(store.results(cid), store.check_label(cid),
                                       store.check_label(prev) if prev else None, store.get_minimum())

@@ -160,6 +160,22 @@ def leaderboard_board(results: list[Result], label: str, prev_label: str | None,
     return Board(f"🏆 Coin Check — {label}", header, lists, GREEN if checked else BLURPLE)
 
 
+def current_coins_board(members: list[Member], note: str = "") -> Board:
+    """Everyone's latest known Contribution, before any coin check has been graded."""
+    shown = [m for m in members if not m.exempt]
+
+    def entry(m: Member) -> Entry:
+        who = f"<@{m.discord_id}>" if m.discord_id else f"**{m.roblox_username}**"
+        return Entry(f"{who} · **{n(m.start_total or 0)}** 🪙", f"{m.roblox_username} · {m.rank}")
+
+    by_coins = sorted(shown, key=lambda m: -(m.start_total or 0))
+    lists = [ListView("💰 Most Coins", [entry(m) for m in by_coins], ranked=True, medal_limit=3),
+             ListView("🔤 A–Z", [entry(m) for m in sorted(shown, key=lambda m: m.roblox_username.lower())])]
+    total = sum(m.start_total or 0 for m in shown)
+    header = " · ".join(x for x in [f"Clan total {n(total)}", note or "Coin checks start soon"] if x)
+    return Board("🏆 Leaderboard — Current Coins", header, lists, BLURPLE)
+
+
 # ----------------------------------------------------------------- roster ---
 
 def roster_board(members: list[Member], latest: dict[str, Result] | None = None,
