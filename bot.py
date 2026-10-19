@@ -437,7 +437,7 @@ bot = ClanBot()
 def _server_name(discord_id: int) -> str | None:
     guild = bot.get_guild(GUILD_ID)
     member = guild.get_member(discord_id) if guild else None
-    return member.display_name if member else None
+    return discord.utils.escape_markdown(member.name) if member else None   # their @handle, not display name
 
 
 reports.name_lookup = _server_name
