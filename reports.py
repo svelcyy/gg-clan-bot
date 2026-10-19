@@ -89,16 +89,16 @@ def coin_board(results: list[Result], label: str, prev_label: str | None, minimu
         if r.status == "Pass":
             return Entry(f"{name} · +{r.gained:,} ✅", f"{n(r.previous)} → {n(r.total)} · {r.member.rank}")
         if r.status == "Fail":
-            return Entry(f"{name} · +{r.gained:,} ❌", f"short {r.short_by:,} · {n(r.previous)} → {n(r.total)}")
+            return Entry(f"{name} · +{r.gained:,} ❌", f"Short {r.short_by:,} · {n(r.previous)} → {n(r.total)}")
         if r.status == "Baseline":
-            return Entry(f"{name} · 🆕", f"total {n(r.total)} · counts from next check")
+            return Entry(f"{name} · 🆕", f"Total {n(r.total)} · Counts from the next check")
         if r.status == "New":
-            start = f" · started at {r.member.start_total:,}" if r.member.start_total is not None else ""
-            return Entry(f"{name} · 🆕", f"joined after this check{start}")
+            start = f" · Started at {r.member.start_total:,}" if r.member.start_total is not None else ""
+            return Entry(f"{name} · 🆕", f"Joined after this check{start}")
         if r.status == "Missing":
-            return Entry(f"{name} · ❓ not in this import", f"last total {n(r.previous)}")
+            return Entry(f"{name} · ❓ Not in this import", f"Last total {n(r.previous)}")
         gained = f" · +{r.gained:,}" if r.gained is not None else ""
-        return Entry(f"{name} · 🛡️ exempt", f"{r.member.rank}{gained}")
+        return Entry(f"{name} · 🛡️ Exempt", f"{r.member.rank}{gained}")
 
     checked = sorted(by["Pass"] + by["Fail"], key=lambda r: -(r.gained or 0))
     baseline = sorted(by["Baseline"], key=lambda r: -(r.total or 0)) + by["New"]
@@ -116,18 +116,18 @@ def coin_board(results: list[Result], label: str, prev_label: str | None, minimu
         lists.append(ListView(f"🆕 New ({len(baseline)})", [entry(r) for r in baseline]))
     if unknown_names:
         lists.append(ListView(f"⚠️ Not on roster ({len(unknown_names)})",
-                              [Entry(f"**{u}**", "in the import but not on the roster · /roster add or /coins set")
+                              [Entry(f"**{u}**", "In the import but not on the roster · Use /roster add or /coins set")
                                for u in unknown_names]))
     lists.append(ListView(f"🛡️ Exempt ({len(by['Exempt'])})", [entry(r) for r in by["Exempt"]]))
 
     parts = [f"Compared with {prev_label}" if prev_label else "Compared with starting coins",
-             f"min {minimum:,}"]
+             f"Minimum {minimum:,}"]
     if by["Pass"] or by["Fail"]:
         parts.append(f"✅ {len(by['Pass'])} · ❌ {len(by['Fail'])}")
     if by["Missing"]:
         parts.append(f"❓ {len(by['Missing'])}")
     color = RED if by["Fail"] else (GREEN if by["Pass"] else BLURPLE)
-    return Board(f"🪙 Coin check — {label}", " · ".join(parts), lists, color, csv_text=csv_text)
+    return Board(f"🪙 Coin Check — {label}", " · ".join(parts), lists, color, csv_text=csv_text)
 
 
 # ----------------------------------------------------------------- roster ---
@@ -147,8 +147,8 @@ def roster_board(members: list[Member], latest: dict[str, Result] | None = None,
         main = f"**{m.roblox_username}**" + (f" · {t:,}" if show_total and t >= 0 else "")
         bits = [m.rank]
         if m.exempt:
-            bits.append("🛡️ exempt")
-        bits.append(f"<@{m.discord_id}>" if m.discord_id else "not linked")
+            bits.append("🛡️ Exempt")
+        bits.append(f"<@{m.discord_id}>" if m.discord_id else "Not linked")
         return Entry(main, " · ".join(bits))
 
     lists = [
@@ -181,15 +181,15 @@ def check_board(roster: list[Member],
         missing, gone, no_id, roster_ids = [], [], [], set()
         for m in roster:
             if m.discord_id is None:
-                no_id.append(Entry(f"**{m.roblox_username}**", "no Discord linked · /roster link"))
+                no_id.append(Entry(f"**{m.roblox_username}**", "No Discord linked · Use /roster link"))
                 continue
             roster_ids.add(m.discord_id)
             who = names.get(m.discord_id, str(m.discord_id))
             if m.discord_id not in server_ids:
-                gone.append(Entry(f"**{m.roblox_username}**", f"{who} · not in the server"))
+                gone.append(Entry(f"**{m.roblox_username}**", f"{who} · Not in the server"))
             elif m.discord_id not in role_ids:
-                missing.append(Entry(f"**{m.roblox_username}**", f"<@{m.discord_id}> · needs {role_name}"))
-        extra = [Entry(f"<@{i}>", f"{names.get(i, '?')} · has {role_name} but isn't on the roster")
+                missing.append(Entry(f"**{m.roblox_username}**", f"<@{m.discord_id}> · Needs {role_name}"))
+        extra = [Entry(f"<@{i}>", f"{names.get(i, '?')} · Has {role_name} but isn't on the roster")
                  for i in sorted(role_ids - roster_ids, key=lambda i: names.get(i, "").lower())]
         lists += [ListView(f"➕ Needs {role_name} ({len(missing)})", missing),
                   ListView(f"➖ Remove {role_name} ({len(extra)})", extra)]
@@ -198,7 +198,7 @@ def check_board(roster: list[Member],
         if no_id:
             lists.append(ListView(f"🔗 No Discord linked ({len(no_id)})", no_id))
         problems += len(missing) + len(extra) + len(gone)
-        summary.append(f"Discord: {len(missing)} need role, {len(extra)} extra")
+        summary.append(f"Discord: {len(missing)} need the role, {len(extra)} extra")
 
     if roblox:
         ids, holders = roblox
@@ -206,11 +206,11 @@ def check_board(roster: list[Member],
         for m in roster:
             uid = m.roblox_id or ids.get(m.roblox_username.lower())
             if uid is None:
-                unknown.append(Entry(f"**{m.roblox_username}**", "Roblox name not found · check the spelling"))
+                unknown.append(Entry(f"**{m.roblox_username}**", "Roblox name not found · Check the spelling"))
                 continue
             roster_uids.add(uid)
             if uid not in holders:
-                missing.append(Entry(f"**{m.roblox_username}**", "needs Clan Member in the Roblox group"))
+                missing.append(Entry(f"**{m.roblox_username}**", "Needs Clan Member in the Roblox group"))
         extra = [Entry(f"**{name}**", f"{role} in the group but not on the roster")
                  for uid, (name, role) in sorted(holders.items(), key=lambda kv: kv[1][0].lower())
                  if uid not in roster_uids]
@@ -219,13 +219,13 @@ def check_board(roster: list[Member],
         if unknown:
             lists.append(ListView(f"❓ Roblox name not found ({len(unknown)})", unknown))
         problems += len(missing) + len(extra) + len(unknown)
-        summary.append(f"Roblox: {len(missing)} need role, {len(extra)} extra")
+        summary.append(f"Roblox: {len(missing)} need a role, {len(extra)} extra")
 
     for err in errors or []:
         summary.append(f"⚠️ {err}")
     if not lists:
         lists = [ListView("Nothing checked", [])]
-    return Board("🔎 Roster check", " · ".join(summary), lists, AMBER if problems else GREEN, noun="people")
+    return Board("🔎 Roster Check", " · ".join(summary), lists, AMBER if problems else GREEN, noun="people")
 
 
 # ---------------------------------------------------------- member status ---
@@ -233,19 +233,19 @@ def check_board(roster: list[Member],
 def member_status(m: Member, history: list[tuple[str, int, int | None]], minimum: int,
                   current: int | None = None) -> tuple[str, str, int]:
     """(title, description, colour) for /mystatus and /coins status."""
-    lines = [f"-# {m.rank}" + (" · 🛡️ exempt from coin checks" if m.exempt else "") + f" · minimum {minimum:,}", ""]
+    lines = [f"-# {m.rank}" + (" · 🛡️ Exempt from coin checks" if m.exempt else "") + f" · Minimum {minimum:,}", ""]
     color = PURPLE if m.exempt else BLURPLE
     if not history:
         lines.append("No coin checks recorded yet.")
     for label, total, gained in history:
         if gained is None:
-            lines += [f"**{label}** · 🆕", f"-# total {total:,}"]
+            lines += [f"**{label}** · 🆕", f"-# Total {total:,}"]
         elif m.exempt:
-            lines += [f"**{label}** · +{gained:,}", f"-# total {total:,}"]
+            lines += [f"**{label}** · +{gained:,}", f"-# Total {total:,}"]
         else:
             ok = gained >= minimum
             lines += [f"**{label}** · +{gained:,} {'✅' if ok else '❌'}",
-                      f"-# total {total:,}" + ("" if ok else f" · short {minimum - gained:,}")]
+                      f"-# Total {total:,}" + ("" if ok else f" · Short {minimum - gained:,}")]
     if history and history[0][2] is not None and not m.exempt:
         color = GREEN if history[0][2] >= minimum else RED
     if current is not None and not m.exempt:
@@ -254,7 +254,7 @@ def member_status(m: Member, history: list[tuple[str, int, int | None]], minimum
             so_far = current - history[0][1]
             need = max(0, minimum - so_far)
             lines.append(f"**This month so far:** +{so_far:,}")
-            lines.append("-# ✅ minimum reached!" if need == 0 else f"-# need {need:,} more to reach {minimum:,}")
+            lines.append("-# ✅ Minimum reached!" if need == 0 else f"-# Need {need:,} more to reach {minimum:,}")
             color = GREEN if need == 0 else AMBER
         else:
             lines.append("-# No previous check to compare with yet.")

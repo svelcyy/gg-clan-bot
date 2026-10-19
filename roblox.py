@@ -83,7 +83,7 @@ def plan_role_change(current: set[int], wanted: int | None, managed: set[int],
               if r not in managed and r not in ignore and ranks.get(r, 0) > max(target_rank, 1)]
     if higher:
         top = max(higher, key=lambda r: ranks.get(r, 0))
-        return set(), set(), f"has a higher group role ({names.get(top, top)}), left alone"
+        return set(), set(), f"Left alone, because they have a higher group role ({names.get(top, top)})."
     add = {wanted} - current if wanted else set()
     remove = (current & managed) - ({wanted} if wanted else set())
     return add, remove, None
@@ -133,10 +133,10 @@ class GroupManager:
                 mem = await self.membership(session, user_id)
             except CloudError as e:
                 if e.status in (400, 404):
-                    return "not in the group yet. Ask them to request to join, then run `/roster rank` to finish"
+                    return "Not in the group yet. Ask them to request to join, then run `/roster rank` to finish."
                 raise
         if mem is None:
-            return "not in the group, nothing to change"
+            return "Not in the group, so nothing was changed."
         current = {int(r.split("/")[-1]) for r in (mem.get("roles") or [mem.get("role")]) if r}
         wanted = self.role_id(self.role_names.get(rank, "")) if rank else None
         managed = {i for i in (self.role_id(n) for n in self.role_names.values() if n) if i}
@@ -157,12 +157,12 @@ class GroupManager:
             except CloudError as e:
                 if e.status not in (400, 404):  # already gone (e.g. the new role replaced it)
                     raise
-        parts = ["✅ accepted join request"] if joined else []
+        parts = ["✅ Accepted their join request"] if joined else []
         if add:
             parts.append("➕ " + ", ".join(names.get(r, str(r)) for r in add))
         if remove:
             parts.append("➖ " + ", ".join(names.get(r, str(r)) for r in remove))
-        return " · ".join(parts) or "already correct"
+        return "\n".join(parts) or "Already correct."
 
 
 class CloudError(Exception):
@@ -172,8 +172,8 @@ class CloudError(Exception):
 
     def friendly(self) -> str:
         if self.status in (401, 403):
-            return ("Roblox refused (permission). Check the API key has Groups read + write for [gg] Clan, "
-                    "the IP restriction includes Wispbyte's address, and the role is below your own rank.")
+            return ("Roblox refused the change. Check the API key has Groups read and write for [gg] Clan, "
+                    "its IP restriction includes Wispbyte's address, and the role is below your own rank.")
         if self.status == 429:
-            return "Roblox is rate-limiting, try again in a minute."
+            return "Roblox is busy right now. Try again in a minute."
         return str(self)

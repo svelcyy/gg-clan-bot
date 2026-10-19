@@ -59,6 +59,7 @@ RANK_ROLES = {
     "Member": "",
 }
 STAFF_CHANNEL_ID = env("STAFF_CHANNEL_ID") or env("REPORT_CHANNEL_ID")
+ROSTER_LOG_CHANNEL_ID = env("ROSTER_LOG_CHANNEL_ID") or STAFF_CHANNEL_ID   # where "new member" alerts go
 ROBLOX_GROUP_ID = int(env("ROBLOX_GROUP_ID", "16909817"))
 ROBLOX_MIN_RANK = int(env("ROBLOX_MIN_RANK", "75"))
 ROBLOX_IGNORE_ROLES = {r.strip().lower() for r in env("ROBLOX_IGNORE_ROLES", "UGC").split(",") if r.strip()}
@@ -192,6 +193,20 @@ async def send_board(interaction: discord.Interaction, board: Board, ephemeral: 
         await interaction.followup.send(embed=view.embed(), ephemeral=ephemeral)
 
 
+async def post_alert(embed: discord.Embed, skip_channel_id: int | None = None):
+    """Post a card to the roster log channel. Mentions in it never ping anyone."""
+    if not ROSTER_LOG_CHANNEL_ID or int(ROSTER_LOG_CHANNEL_ID) == (skip_channel_id or 0):
+        return
+    channel = bot.get_channel(int(ROSTER_LOG_CHANNEL_ID))
+    if channel is None:
+        log.warning("ROSTER_LOG_CHANNEL_ID %s not found", ROSTER_LOG_CHANNEL_ID)
+        return
+    try:
+        await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+    except discord.HTTPException:
+        log.exception("Couldn't post to the roster log channel")
+
+
 async def post_board_to_staff(board: Board, skip_channel_id: int | None = None):
     if not STAFF_CHANNEL_ID or int(STAFF_CHANNEL_ID) == skip_channel_id:
         return
@@ -219,7 +234,8 @@ group_manager = (rbx.GroupManager(ROBLOX_API_KEY, ROBLOX_GROUP_ID, GROUP_ROLES, 
 
 
 async def sync_group(roblox_username: str, roblox_id: int | None, rank: str | None) -> str:
-    """Set the Roblox group role to match the clan rank (rank=None: they left). One short line for the reply."""
+    """Set the Roblox group role to match the clan rank (rank=None: they left).
+    Returns the text for the reply's "Roblox Group" field, or "" if group syncing isn't set up."""
     if not group_manager:
         return ""
     try:
@@ -227,17 +243,17 @@ async def sync_group(roblox_username: str, roblox_id: int | None, rank: str | No
             if not roblox_id:
                 found = await rbx.lookup_usernames(s, [roblox_username])
                 if roblox_username.lower() not in found:
-                    return "-# Roblox group: couldn't find that Roblox account"
+                    return "⚠️ Couldn't find that Roblox account."
                 roblox_id = found[roblox_username.lower()][0]
                 store.update_member(roblox_username, roblox_id=roblox_id)
             result = await group_manager.sync(s, roblox_id, rank)
-        return f"-# Roblox group: {result}"
+        return result
     except rbx.CloudError as e:
         log.warning("Group sync failed for %s: %s", roblox_username, e)
-        return f"-# ⚠️ Roblox group: {e.friendly()}"
+        return f"⚠️ {e.friendly()}"
     except Exception as e:
         log.exception("Group sync failed")
-        return f"-# ⚠️ Roblox group: couldn't update ({e})"
+        return f"⚠️ Couldn't update the group ({e})."
 
 
 def find_role(guild: discord.Guild, name_or_id: str) -> discord.Role | None:
@@ -250,15 +266,15 @@ def find_role(guild: discord.Guild, name_or_id: str) -> discord.Role | None:
 
 async def sync_roles(guild: discord.Guild, discord_id: int | None, rank: str | None) -> str:
     """Give someone gg Member + their rank's role and take away other rank roles.
-    rank=None means they left the clan: take all clan roles away. Returns one short line for the reply."""
+    rank=None means they left the clan: take all clan roles away. Returns the text for the "Discord Roles" field."""
     if not discord_id:
-        return "-# Discord not linked, so no roles changed"
+        return "Discord not linked, so no roles were changed."
     try:
         member = await guild.fetch_member(discord_id)
     except discord.NotFound:
-        return "-# ⚠️ They're not in this Discord server, so no roles changed"
+        return "⚠️ They're not in this Discord server, so no roles were changed."
     except discord.HTTPException as e:
-        return f"-# ⚠️ Couldn't look them up in Discord ({e.status})"
+        return f"⚠️ Couldn't look them up in Discord ({e.status})."
     managed = {r for r in [find_role(guild, MEMBER_ROLE)] + [find_role(guild, n) for n in RANK_ROLES.values()] if r}
     wanted = set()
     if rank is not None:
@@ -266,7 +282,7 @@ async def sync_roles(guild: discord.Guild, discord_id: int | None, rank: str | N
     have = set(member.roles)
     add, remove = wanted - have, (managed - wanted) & have
     if not add and not remove:
-        return "-# Discord roles already correct"
+        return "Already correct."
     try:
         if add:
             await member.add_roles(*add, reason="[gg] roster update")
@@ -274,14 +290,31 @@ async def sync_roles(guild: discord.Guild, discord_id: int | None, rank: str | N
             await member.remove_roles(*remove, reason="[gg] roster update")
     except discord.Forbidden:
         names = ", ".join(r.name for r in add | remove)
-        return (f"-# ⚠️ Couldn't change roles ({names}). Give the bot **Manage Roles** and drag its role "
+        return (f"⚠️ Couldn't change {names}. Give the bot **Manage Roles** and drag its role "
                 f"above these roles in Server Settings › Roles.")
     parts = []
     if add:
         parts.append("➕ " + ", ".join(r.name for r in add))
     if remove:
         parts.append("➖ " + ", ".join(r.name for r in remove))
-    return "-# Discord roles: " + " · ".join(parts)
+    return "\n".join(parts)
+
+
+def update_embed(title: str, description: str = "", color: int = GREEN, fields: list[tuple[str, str, bool]] = (),
+                 discord_roles: str | None = None, group: str = "", footer: str = "", notes: list[str] = ()) -> discord.Embed:
+    """A tidy confirmation card: labelled fields, then role changes, then any notes."""
+    e = discord.Embed(title=title, description=description or None, color=color)
+    for name, value, inline in fields:
+        e.add_field(name=name, value=value or "—", inline=inline)
+    if discord_roles is not None:
+        e.add_field(name="Discord Roles", value=discord_roles, inline=False)
+    if group:
+        e.add_field(name="Roblox Group", value=group, inline=False)
+    if notes:
+        e.add_field(name="⚠️ Note", value="\n".join(notes), inline=False)
+    if footer:
+        e.set_footer(text=footer)
+    return e
 
 
 # ================================================================ the bot ===
@@ -330,8 +363,8 @@ roster_group = app_commands.Group(name="roster", description="Manage the clan ro
 async def roster_add(interaction: discord.Interaction, roblox: str, discord_user: Optional[discord.User] = None,
                      coins: Optional[app_commands.Range[int, 0]] = None,
                      rank: Optional[app_commands.Choice[str]] = None, exempt: bool = False, notes: str = ""):
-    await interaction.response.defer()
-    name, rid, warn = roblox.strip().lstrip("@"), None, ""
+    await interaction.response.defer(ephemeral=True)  # only the person who ran it sees the reply
+    name, rid, notes_out = roblox.strip().lstrip("@"), None, []
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as s:
             found = await rbx.lookup_usernames(s, [name])
@@ -342,26 +375,29 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
             return
         rid, name = found[name.lower()]
     except Exception:
-        warn = "\n⚠️ Couldn't reach Roblox to double-check the username, so it was added as typed."
+        notes_out.append("Couldn't reach Roblox to double-check the username, so it was added as typed.")
     if discord_user and store.discord_id_owner(discord_user.id):
-        warn += f"\n⚠️ That Discord account is also linked to {', '.join(store.discord_id_owner(discord_user.id))}."
+        notes_out.append(f"That Discord account is also linked to {', '.join(store.discord_id_owner(discord_user.id))}.")
     rank_name = rank.value if rank else "Member"
     if not store.add_member(name, rid, discord_user.id if discord_user else None, rank_name, exempt, notes, coins):
         await interaction.followup.send(embed=simple(f"**{name}** is already on the roster.", AMBER))
         return
-    lines = [f"-# {rank_name}" + (" · 🛡️ exempt" if exempt else "") +
-             f" · {discord_user.mention if discord_user else 'Discord not linked'}"]
-    if coins is not None:
-        lines.append(f"Starting coins: **{coins:,}**\n-# their next coin check measures from here")
-    else:
-        lines.append("No starting coins given.\n-# their first coin check becomes their starting point "
-                     "(set it now with `/roster start`)")
-    lines.append(await sync_roles(interaction.guild, discord_user.id if discord_user else None, rank_name))
-    group_line = await sync_group(name, rid, rank_name)
-    if group_line:
-        lines.append(group_line)
-    lines.append(f"-# roster {len(store.members())}/100")
-    await interaction.followup.send(embed=simple("\n".join(lines) + warn, GREEN, f"✅ Added {name}"))
+    roles = await sync_roles(interaction.guild, discord_user.id if discord_user else None, rank_name)
+    group = await sync_group(name, rid, rank_name)
+    desc = ("Their next coin check will measure from their starting coins." if coins is not None else
+            "No starting coins yet, so their first coin check will be their starting point. "
+            "Set it now with `/roster start`.")
+    info = [("Rank", rank_name + (" · 🛡️ Exempt" if exempt else ""), True),
+            ("Discord", discord_user.mention if discord_user else "Not linked", True),
+            ("Starting Coins", f"{coins:,}" if coins is not None else "Not set", True)]
+    footer = f"Roster: {len(store.members())}/100"
+    await interaction.followup.send(embed=update_embed(
+        f"✅ Added {name}", desc, fields=info, discord_roles=roles, group=group, notes=notes_out, footer=footer),
+        ephemeral=True)
+    alert = update_embed(f"🆕 New Clan Member: {name}", f"Added by {interaction.user.mention}.", fields=info,
+                         footer=footer)
+    alert.timestamp = discord.utils.utcnow()
+    await post_alert(alert, skip_channel_id=None)
 
 
 @roster_group.command(name="start", description="Set or fix someone's starting coins")
@@ -370,7 +406,7 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
 async def roster_start(interaction: discord.Interaction, roblox: str, coins: app_commands.Range[int, 0]):
     ok = store.update_member(roblox, start_total=coins)
     await interaction.response.send_message(embed=simple(
-        f"**{roblox}** · starting coins set to **{coins:,}**" if ok else f"**{roblox}** isn't on the roster.",
+        f"**{roblox}**'s starting coins are now **{coins:,}**." if ok else f"**{roblox}** isn't on the roster.",
         GREEN if ok else AMBER))
 
 
@@ -390,7 +426,7 @@ async def roster_reset(interaction: discord.Interaction, confirm: str):
     count = len(store.members())
     store.reset_all()
     await interaction.response.send_message(embed=simple(
-        f"Removed {count} members and every coin check.\n-# Add people with `/roster add`", GREEN, "🧹 Fresh start"))
+        f"Removed {count} members and every coin check.\nAdd people with `/roster add`.", GREEN, "🧹 Fresh Start"))
 
 
 @roster_group.command(name="remove", description="Remove someone from the roster and take their clan roles")
@@ -405,17 +441,14 @@ async def roster_remove(interaction: discord.Interaction, roblox: str, keep_role
     store.remove_member(roblox)
     others = [o for o in store.discord_id_owner(m.discord_id)] if m.discord_id else []
     if keep_roles:
-        roles = "-# Discord roles left as they were"
-    elif others:  # same Discord account still on the roster under another name
-        roles = f"-# Discord roles kept: that account is still on the roster as {', '.join(others)}"
+        roles, group = "Left as they were.", ""
     else:
-        roles = await sync_roles(interaction.guild, m.discord_id, None)
-    if not keep_roles:
-        group_line = await sync_group(m.roblox_username, m.roblox_id, None)
-        if group_line:
-            roles += "\n" + group_line
-    await interaction.followup.send(embed=simple(
-        f"{roles}\n-# roster {len(store.members())}/100 · coin history kept", GREEN, f"🗑️ Removed {m.roblox_username}"))
+        roles = (f"Kept, because that account is still on the roster as {', '.join(others)}." if others
+                 else await sync_roles(interaction.guild, m.discord_id, None))
+        group = await sync_group(m.roblox_username, m.roblox_id, None)
+    await interaction.followup.send(embed=update_embed(
+        f"🗑️ Removed {m.roblox_username}", "Their coin history is kept.", discord_roles=roles, group=group,
+        footer=f"Roster: {len(store.members())}/100"))
 
 
 @roster_group.command(name="link", description="Link a member's Discord account")
@@ -429,18 +462,19 @@ async def roster_link(interaction: discord.Interaction, roblox: str, discord_use
     others = [o for o in store.discord_id_owner(discord_user.id) if o.lower() != roblox.lower()]
     store.update_member(roblox, discord_id=discord_user.id)
     m = store.get_member(roblox)
-    text = f"🔗 **{m.roblox_username}** is now linked to {discord_user.mention}."
-    if others:
-        text += f"\n⚠️ That Discord account is also linked to {', '.join(others)}."
-    text += "\n" + await sync_roles(interaction.guild, discord_user.id, m.rank)
-    await interaction.followup.send(embed=simple(text))
+    roles = await sync_roles(interaction.guild, discord_user.id, m.rank)
+    await interaction.followup.send(embed=update_embed(
+        f"🔗 Linked {m.roblox_username}", f"Now linked to {discord_user.mention}.",
+        fields=[("Rank", m.rank, True)], discord_roles=roles,
+        notes=[f"That Discord account is also linked to {', '.join(others)}."] if others else []))
 
 
 @roster_group.command(name="exempt", description="Turn coin-check exemption on or off")
 @app_commands.autocomplete(roblox=roster_autocomplete)
 async def roster_exempt(interaction: discord.Interaction, roblox: str, exempt: bool):
     ok = store.update_member(roblox, exempt=exempt)
-    text = (f"🛡️ **{roblox}** is now exempt." if exempt else f"**{roblox}** is no longer exempt.") \
+    text = (f"🛡️ **{roblox}** is now exempt from coin checks." if exempt
+            else f"**{roblox}** is no longer exempt from coin checks.") \
         if ok else f"**{roblox}** isn't on the roster."
     await interaction.response.send_message(embed=simple(text, PURPLE if ok and exempt else GREEN if ok else AMBER))
 
@@ -455,9 +489,9 @@ async def roster_rank(interaction: discord.Interaction, roblox: str, rank: app_c
     await interaction.response.defer()
     m = store.get_member(roblox)
     roles = await sync_roles(interaction.guild, m.discord_id, rank.value)
-    group_line = await sync_group(m.roblox_username, m.roblox_id, rank.value)
-    await interaction.followup.send(embed=simple(
-        f"**{m.roblox_username}** is now **{rank.value}**.\n{roles}" + (f"\n{group_line}" if group_line else "")))
+    group = await sync_group(m.roblox_username, m.roblox_id, rank.value)
+    await interaction.followup.send(embed=update_embed(
+        f"🎖️ {m.roblox_username} is now {rank.value}", discord_roles=roles, group=group))
 
 
 @roster_group.command(name="note", description="Set a note on a member (leave empty to clear)")
@@ -504,7 +538,7 @@ async def coins_import(interaction: discord.Interaction, file: discord.Attachmen
     label = label or dt.date.today().strftime("%d %b %Y")
     cid, unknown = store.import_check(label, totals, str(interaction.user))
     board = coin_board(cid, unknown)
-    board.header += f" · imported {len(totals)}"
+    board.header += f" · Imported {len(totals)}"
     await send_board(interaction, board)
     await post_board_to_staff(board, skip_channel_id=interaction.channel_id)
 
