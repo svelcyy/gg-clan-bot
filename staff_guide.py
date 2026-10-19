@@ -65,6 +65,7 @@ PAGES: list[tuple[str, str, str, str]] = [   # (key, emoji, title, body)
      "• `/roster rank` · promotions and demotions\n"
      "• `/roster exempt` · coin check exemptions (staff ranks are exempt automatically)\n"
      "• `/roster start` · fixing starting coins\n"
+     "• `/roster sync` · fixing everyone's roles at once\n"
      "• `/coins import`, `/coins set`, `/coins undo`, `/coins minimum` · coin checks\n"
      "• `/update`, `/restart`, `/reminders` · running the bot\n"
      "• `/roster reset` · wipes everything\n\n"

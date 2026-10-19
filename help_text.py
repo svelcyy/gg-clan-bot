@@ -75,6 +75,14 @@ COMMANDS: list[HelpEntry] = [
               "Make someone exempt from coin checks (or not)",
               "/roster exempt roblox:zayn exempt:True",
               "Exempt members show in a separate list and never pass or fail."),
+    HelpEntry("/roster sync", "Roster", True,
+              "Check everyone's roles and fix any that are wrong",
+              "/roster sync  ·  /roster sync remove_extras:True",
+              "Goes through the whole roster and makes sure everyone has the right **Discord roles** "
+              "(gg Member + their rank role) and **Roblox group roles** (Clan Member + their staff role), "
+              "fixing anything that's wrong. Staff are also made exempt from coin checks.\n"
+              "It also lists people who have clan roles but aren't on the roster. Set **remove_extras** to True "
+              "to take those roles away too.\nTakes a minute or two. Only you see the results."),
     HelpEntry("/roster note", "Roster", True,
               "Add a note to someone",
               "/roster note roblox:pramishp4 note:on vacation until Dec",
@@ -148,7 +156,7 @@ COMMANDS: list[HelpEntry] = [
 ]
 
 # Clan Manager commands: need the Administrator permission
-ADMIN_ONLY = {"/roster rank", "/roster start", "/roster exempt", "/roster reset", "/coins import", "/coins set",
+ADMIN_ONLY = {"/roster sync", "/roster rank", "/roster start", "/roster exempt", "/roster reset", "/coins import", "/coins set",
               "/coins minimum", "/coins undo", "/update", "/restart", "/reminders"}
 
 # (name, emoji, one line for the menu). Order = order in the menu.

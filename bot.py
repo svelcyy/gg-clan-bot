@@ -710,6 +710,118 @@ async def roster_note(interaction: discord.Interaction, roblox: str, note: str =
     await interaction.response.send_message(embed=simple(text, GREEN if ok else AMBER), ephemeral=True)
 
 
+def _outcome(text: str) -> str:
+    """Sort a sync_roles / sync_group reply into: changed, problem or ok."""
+    if not text:
+        return "ok"
+    if "➕" in text or "➖" in text:
+        return "changed"
+    if text.startswith("⚠️") or text.startswith("Not in the Roblox group"):
+        return "problem"
+    return "ok"
+
+
+def _flat(text: str) -> str:
+    return " · ".join(line.strip() for line in text.splitlines() if line.strip())
+
+
+@roster_group.command(name="sync", description="Check everyone's Discord and Roblox group roles and fix any that are wrong")
+@admin_only
+@app_commands.describe(remove_extras="Also take clan roles away from people who aren't on the roster (default: just list them)")
+async def roster_sync(interaction: discord.Interaction, remove_extras: bool = False):
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    guild = interaction.guild
+    members = store.members()
+    fixed, problems, unlinked = [], [], []
+
+    async def progress(done: int):
+        try:
+            await interaction.edit_original_response(embed=simple(
+                f"Checking roles… **{done}/{len(members)}**", BLURPLE, "🔄 Syncing the Roster"))
+        except discord.HTTPException:
+            pass
+
+    for i, m in enumerate(members):
+        if i % 10 == 0:
+            await progress(i)
+        if m.rank != "Member" and not m.exempt:
+            store.update_member(m.roblox_username, exempt=True)   # staff are always exempt
+        roles = await sync_roles(guild, m.discord_id, m.rank) if m.discord_id else ""
+        if not m.discord_id:
+            unlinked.append(m)
+        group = await sync_group(m.roblox_username, m.roblox_id, m.rank)
+        name = f"**{esc(m.roblox_username)}**"
+        changes = []
+        if _outcome(roles) == "changed":
+            changes.append(f"Discord: {_flat(roles)}")
+        if _outcome(group) == "changed":
+            changes.append(f"Group: {_flat(group)}")
+        issues = [_flat(t) for t in (roles, group) if _outcome(t) == "problem"]
+        if changes:
+            fixed.append(reports.Entry(name, " · ".join(changes)))
+        if issues:
+            problems.append(reports.Entry(name, " · ".join(issues)))
+    await progress(len(members))
+
+    # people holding clan roles who aren't on the roster
+    extras: list[reports.Entry] = []
+    roster_ids = {m.discord_id for m in store.members() if m.discord_id}
+    member_role = find_role(guild, MEMBER_ROLE)
+    managed = {r for r in [member_role] + [find_role(guild, n) for n in RANK_ROLES.values()] if r}
+    try:
+        async for mem in guild.fetch_members(limit=None):
+            if mem.bot or mem.id in roster_ids:
+                continue
+            held = managed & set(mem.roles)
+            if not held:
+                continue
+            if remove_extras:
+                try:
+                    await mem.remove_roles(*held, reason="[gg] not on the roster")
+                    extras.append(reports.Entry(f"**@{esc(mem.name)}**", "➖ " + ", ".join(r.name for r in held)))
+                except discord.Forbidden:
+                    problems.append(reports.Entry(f"**@{esc(mem.name)}**", "⚠️ Couldn't remove their clan roles"))
+            else:
+                extras.append(reports.Entry(f"**@{esc(mem.name)}**", "Has " + ", ".join(r.name for r in held)))
+    except discord.HTTPException:
+        log.exception("Couldn't scan server members")
+    if group_manager:
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as s:
+                holders = await rbx.clan_role_holders(s, ROBLOX_GROUP_ID, ROBLOX_MIN_RANK, ROBLOX_IGNORE_ROLES)
+            roster_uids = {m.roblox_id for m in store.members() if m.roblox_id}
+            for uid, (uname, role) in sorted(holders.items(), key=lambda kv: kv[1][0].lower()):
+                if uid in roster_uids:
+                    continue
+                if remove_extras:
+                    result = await sync_group(uname, uid, None)
+                    entry = reports.Entry(f"**{esc(uname)}**", f"Group: {_flat(result)}")
+                    (problems if _outcome(result) == "problem" else extras).append(entry)
+                else:
+                    extras.append(reports.Entry(f"**{esc(uname)}**", f"{role} in the group"))
+        except Exception:
+            log.exception("Couldn't check Roblox group extras")
+
+    lists = [reports.ListView(f"✅ Fixed ({len(fixed)})", fixed, empty="Everyone already had the right roles 🎉"),
+             reports.ListView(f"⚠️ Couldn't Fix ({len(problems)})", problems, empty="No problems 🎉"),
+             reports.ListView(f"🧹 {'Removed' if remove_extras else 'Not on the Roster'} ({len(extras)})", extras,
+                              empty="Nobody extra 🎉")]
+    if unlinked:
+        lists.append(reports.ListView(f"🔗 Not Linked ({len(unlinked)})",
+                                      [reports.Entry(f"**{esc(m.roblox_username)}**", "Link with /roster link")
+                                       for m in unlinked]))
+    header = reports.joined(f"{len(members)} checked", f"{len(fixed)} fixed",
+                            f"{len(problems)} couldn't fix" if problems else "",
+                            f"{len(extras)} {'removed' if remove_extras else 'not on the roster'}" if extras else "")
+    board = Board("🔄 Roster Sync", header, lists, AMBER if problems else GREEN, noun="people")
+    view = BoardView(board, owner_id=interaction.user.id)
+    await interaction.edit_original_response(embed=view.embed(), view=view if view.needed() else None)
+    if fixed or (remove_extras and extras):
+        alert = simple(f"{handle(interaction.user)} synced the roster: {header}.", BLURPLE, "🔄 Roster Synced")
+        alert.timestamp = discord.utils.utcnow()
+        await post_alert(alert)
+
+
 @roster_group.command(name="list", description="Browse the roster (and download it as a spreadsheet file)")
 async def roster_list(interaction: discord.Interaction):
     await interaction.response.defer()
