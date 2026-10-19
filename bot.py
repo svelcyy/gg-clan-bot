@@ -533,17 +533,29 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
         notes_out.append(f"That Discord account is also linked to {', '.join(store.discord_id_owner(discord_user.id))}.")
     rank_name = rank.value if rank else "Member"
     coins_given = coins is not None
-    coins = coins if coins_given else 0   # no number given: start from 0
+    returning = store.last_known(name, rid)          # were they on the roster before?
+    restored_coins = not coins_given and bool(returning and returning["coins"])
+    if restored_coins:
+        coins = returning["coins"]                   # pick up where they left off
+    elif not coins_given:
+        coins = 0                                    # no number given: start from 0
+    if discord_user is None and returning and returning["discord_id"]:
+        try:
+            discord_user = bot.get_user(returning["discord_id"]) or await bot.fetch_user(returning["discord_id"])
+        except discord.HTTPException:
+            pass
     if not store.add_member(name, rid, discord_user.id if discord_user else None, rank_name, exempt, notes, coins):
         await interaction.followup.send(embed=simple(f"**{name}** is already on the roster.", AMBER))
         return
     roles = await sync_roles(interaction.guild, discord_user.id if discord_user else None, rank_name)
     group = await sync_group(name, rid, rank_name)
     desc = ("Their next coin check will measure from their starting coins." if coins_given else
-            "No coins given, so they start from **0**. Change it any time with `/roster start`.")
+            "Welcome back! They start from their **last known coins**. If that's wrong, the Clan Manager can fix it."
+            if restored_coins else
+            "No coins given, so they start from **0**. The Clan Manager can change it with `/roster start`.")
     info = [("Rank", rank_name + (" · 🛡️ Exempt" if exempt else ""), True),
             ("Discord", discord_user.mention if discord_user else "Not linked", True),
-            ("Starting Coins", f"{coins:,}" + ("" if coins_given else " (default)"), True)]
+            ("Starting Coins", f"{coins:,}" + ("" if coins_given else " (last known)" if restored_coins else " (default)"), True)]
     footer = f"Roster: {len(store.members())}/100"
     await interaction.followup.send(embed=update_embed(
         f"✅ Added {name}", desc, fields=info, discord_roles=roles, group=group, notes=notes_out, footer=footer),

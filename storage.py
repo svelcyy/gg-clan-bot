@@ -37,6 +37,13 @@ CREATE TABLE IF NOT EXISTS totals (
     total           INTEGER NOT NULL,
     PRIMARY KEY (check_id, roblox_username)
 );
+CREATE TABLE IF NOT EXISTS former (
+    roblox_username TEXT PRIMARY KEY COLLATE NOCASE,
+    roblox_id       INTEGER,
+    discord_id      INTEGER,
+    start_total     INTEGER,
+    removed_at      TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -140,9 +147,31 @@ class Store:
         return cur.rowcount > 0
 
     def remove_member(self, roblox_username: str) -> bool:
+        m = self.get_member(roblox_username)
+        if m:   # remember them, so re-adding them later picks up where they left off
+            self.db.execute("INSERT OR REPLACE INTO former(roblox_username,roblox_id,discord_id,start_total,removed_at) "
+                            "VALUES(?,?,?,?,?)", (m.roblox_username, m.roblox_id, m.discord_id, m.start_total, _now()))
         cur = self.db.execute("DELETE FROM members WHERE roblox_username=?", (roblox_username.strip(),))
         self.db.commit()
         return cur.rowcount > 0
+
+    def last_known(self, roblox_username: str, roblox_id: int | None = None) -> dict | None:
+        """What we knew about someone who was on the roster before: their latest coins and Discord link."""
+        names = {roblox_username.strip().lower()}
+        row = None
+        if roblox_id:
+            row = self.db.execute("SELECT * FROM former WHERE roblox_id=? ORDER BY removed_at DESC LIMIT 1",
+                                  (roblox_id,)).fetchone()
+        row = row or self.db.execute("SELECT * FROM former WHERE roblox_username=?", (roblox_username.strip(),)).fetchone()
+        if row:
+            names.add(row["roblox_username"].lower())
+        q = ",".join("?" * len(names))
+        best = self.db.execute(f"SELECT MAX(total) AS t FROM totals WHERE lower(roblox_username) IN ({q})",
+                               tuple(names)).fetchone()["t"]
+        coins = max([v for v in (best, row["start_total"] if row else None) if v is not None], default=None)
+        if row is None and coins is None:
+            return None
+        return {"coins": coins, "discord_id": row["discord_id"] if row else None}
 
     def update_member(self, roblox_username: str, **fields) -> bool:
         allowed = {"roblox_id", "discord_id", "rank", "exempt", "notes", "start_total"}
