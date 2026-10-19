@@ -774,7 +774,9 @@ async def coins_status(interaction: discord.Interaction, roblox: str):
         await interaction.response.send_message(embed=simple(f"**{roblox}** isn't on the roster.", AMBER))
         return
     title, desc, color = reports.member_status(m, store.history(m.roblox_username), store.get_minimum())
-    await interaction.response.send_message(embed=simple(desc, color, title))
+    e = simple(desc, color, title)
+    e.set_footer(text=f"[gg] bot v{RUNNING_VERSION}")
+    await interaction.response.send_message(embed=e)
 
 
 @coins_group.command(name="minimum", description="Change the monthly minimum (default 10,000)")
@@ -849,7 +851,9 @@ async def mystatus(interaction: discord.Interaction, current: Optional[app_comma
             "Discord with `/roster link`.", AMBER), ephemeral=True)
         return
     title, desc, color = reports.member_status(m, store.history(m.roblox_username), store.get_minimum(), current)
-    await interaction.response.send_message(embed=simple(desc, color, title), ephemeral=True)
+    e = simple(desc, color, title)
+    e.set_footer(text=f"[gg] bot v{RUNNING_VERSION}")
+    await interaction.response.send_message(embed=e, ephemeral=True)
 
 
 # ================================================================= /update ===

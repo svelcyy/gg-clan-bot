@@ -1,4 +1,5 @@
 # Newest first. Format: version | what changed
+2.5.1 | Test update: the bot version now shows at the bottom of /mystatus and /coins status
 2.5.0 | /update is now private to you, and shows real version numbers with what's new
 2.4.3 | "Checking coins..." status and the mobile (phone) icon
 2.4.2 | /roster add: starting coins default to 0 when left empty
