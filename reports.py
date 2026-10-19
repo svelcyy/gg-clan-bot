@@ -28,6 +28,23 @@ def n(x: int | None) -> str:
     return "—" if x is None else f"{x:,}"
 
 
+
+# Discord shows <@id> mentions as raw numbers for people the viewer's app hasn't loaded, so boards use
+# plain names instead. The bot sets this to look names up in the server.
+name_lookup = lambda discord_id: None   # noqa: E731
+
+
+def dname(discord_id: int | None) -> str | None:
+    """'@name' for a linked Discord account, or None if not linked."""
+    if not discord_id:
+        return None
+    try:
+        name = name_lookup(int(discord_id))
+    except Exception:
+        name = None
+    return f"@{name}" if name else "Not in the server"
+
+
 @dataclass
 class Entry:
     main: str        # bold line, e.g. "**pramishp4** · +12,000 ✅"
@@ -135,7 +152,8 @@ def coin_board(results: list[Result], label: str, prev_label: str | None, minimu
 def leaderboard_board(results: list[Result], label: str, prev_label: str | None, minimum: int) -> Board:
     """The member-facing view of the latest coin check: Discord user, coins and gain. No staff details."""
     def who(r: Result) -> str:
-        return f"<@{r.member.discord_id}>" if r.member.discord_id else f"**{r.member.roblox_username}**"
+        d = dname(r.member.discord_id)
+        return f"**{d}**" if d and d.startswith("@") else f"**{r.member.roblox_username}**"
 
     def entry(r: Result) -> Entry:
         sub = f"{r.member.roblox_username} · Total {n(r.total)}"
@@ -165,7 +183,8 @@ def current_coins_board(members: list[Member], note: str = "") -> Board:
     shown = [m for m in members if not m.exempt]
 
     def entry(m: Member) -> Entry:
-        who = f"<@{m.discord_id}>" if m.discord_id else f"**{m.roblox_username}**"
+        d = dname(m.discord_id)
+        who = f"**{d}**" if d and d.startswith("@") else f"**{m.roblox_username}**"
         return Entry(f"{who} · **{n(m.start_total or 0)}** 🪙", f"{m.roblox_username} · {m.rank}")
 
     by_coins = sorted(shown, key=lambda m: -(m.start_total or 0))
@@ -194,7 +213,7 @@ def roster_board(members: list[Member], latest: dict[str, Result] | None = None,
         bits = [m.rank]
         if m.exempt:
             bits.append("🛡️ Exempt")
-        bits.append(f"<@{m.discord_id}>" if m.discord_id else "Not linked")
+        bits.append(dname(m.discord_id) or "Not linked")
         return Entry(main, " · ".join(bits))
 
     lists = [
@@ -234,8 +253,8 @@ def check_board(roster: list[Member],
             if m.discord_id not in server_ids:
                 gone.append(Entry(f"**{m.roblox_username}**", f"{who} · Not in the server"))
             elif m.discord_id not in role_ids:
-                missing.append(Entry(f"**{m.roblox_username}**", f"<@{m.discord_id}> · Needs {role_name}"))
-        extra = [Entry(f"<@{i}>", f"{names.get(i, '?')} · Has {role_name} but isn't on the roster")
+                missing.append(Entry(f"**{m.roblox_username}**", f"{dname(m.discord_id)} · Needs {role_name}"))
+        extra = [Entry(f"**{dname(i)}**", f"{names.get(i, '?')} · Has {role_name} but isn't on the roster")
                  for i in sorted(role_ids - roster_ids, key=lambda i: names.get(i, "").lower())]
         lists += [ListView(f"➕ Needs {role_name} ({len(missing)})", missing),
                   ListView(f"➖ Remove {role_name} ({len(extra)})", extra)]

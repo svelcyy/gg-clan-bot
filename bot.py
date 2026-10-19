@@ -428,9 +428,33 @@ class ClanBot(discord.Client):
 
     async def on_ready(self):
         log.info("Logged in as %s — %d members on the roster", self.user, len(store.members()))
+        await load_names()
 
 
 bot = ClanBot()
+
+
+def _server_name(discord_id: int) -> str | None:
+    guild = bot.get_guild(GUILD_ID)
+    member = guild.get_member(discord_id) if guild else None
+    return member.display_name if member else None
+
+
+reports.name_lookup = _server_name
+
+
+async def load_names():
+    """Make sure the bot knows the roster's Discord names (it doesn't load the whole server at startup)."""
+    guild = bot.get_guild(GUILD_ID)
+    if guild is None:
+        return
+    ids = [m.discord_id for m in store.members() if m.discord_id and guild.get_member(m.discord_id) is None]
+    for i in range(0, len(ids), 100):
+        try:
+            await guild.query_members(user_ids=ids[i:i + 100], cache=True)
+        except Exception:
+            log.exception("Couldn't load Discord names")
+            return
 
 
 # ================================================================ /roster ===
@@ -538,7 +562,7 @@ async def roster_remove(interaction: discord.Interaction, roblox: str, keep_role
         footer=footer), ephemeral=True)
     alert = update_embed(f"👋 Left the Clan: {m.roblox_username}", f"Removed by {interaction.user.mention}.",
                          color=RED, fields=[("Rank", m.rank, True),
-                                            ("Discord", f"<@{m.discord_id}>" if m.discord_id else "Not linked", True)],
+                                            ("Discord", reports.dname(m.discord_id) or "Not linked", True)],
                          footer=footer)
     alert.timestamp = discord.utils.utcnow()
     await post_alert(alert)
@@ -593,7 +617,7 @@ async def roster_rank(interaction: discord.Interaction, roblox: str, rank: app_c
         alert = update_embed(f"{'⬆️ Promoted' if promoted else '⬇️ Demoted'}: {m.roblox_username}",
                              f"Changed by {interaction.user.mention}.", color=GREEN if promoted else AMBER,
                              fields=[("Rank", f"{before.rank} → **{rank.value}**", True),
-                                     ("Discord", f"<@{m.discord_id}>" if m.discord_id else "Not linked", True)])
+                                     ("Discord", reports.dname(m.discord_id) or "Not linked", True)])
         alert.timestamp = discord.utils.utcnow()
         await post_alert(alert)
 
@@ -609,6 +633,7 @@ async def roster_note(interaction: discord.Interaction, roblox: str, note: str =
 @roster_group.command(name="list", description="Browse the roster (and download it as a spreadsheet file)")
 async def roster_list(interaction: discord.Interaction):
     await interaction.response.defer()
+    await load_names()
     cid = store.latest_check_id()
     latest = {r.member.roblox_username: r for r in store.results(cid)} if cid else None
     await send_board(interaction, reports.roster_board(store.members(), latest, store.export_csv()))
@@ -756,6 +781,7 @@ class ImportConfirm(discord.ui.View):
         await interaction.response.edit_message(
             embed=simple(f"Saved **{self.label}**." + (f" Updated {len(renamed)} renamed Roblox account(s)." if renamed
                          else ""), GREEN, "✅ Coin Check Saved"), view=self)
+        await load_names()
         board = coin_board(cid, unknown)
         board.header += f" · Imported {len(totals)}"
         await send_board(interaction, board)           # posted in this channel for everyone
@@ -828,6 +854,7 @@ async def coins_results(interaction: discord.Interaction):
         await interaction.response.send_message(embed=simple("No coin checks yet. Use `/coins import`.", AMBER))
         return
     await interaction.response.defer()
+    await load_names()
     await send_board(interaction, coin_board(cid))
 
 
@@ -928,6 +955,7 @@ async def help_command(interaction: discord.Interaction):
 async def leaderboard(interaction: discord.Interaction):
     cid = store.latest_check_id()
     await interaction.response.defer(ephemeral=True)
+    await load_names()
     if not cid:   # no graded check yet: show everyone's current coins
         await send_board(interaction, reports.current_coins_board(store.members()), ephemeral=True)
         return
@@ -1080,6 +1108,7 @@ async def build_check(guild: discord.Guild, which: str) -> Board:
 @app_commands.guild_only()
 async def check(interaction: discord.Interaction, what: Optional[app_commands.Choice[str]] = None):
     await interaction.response.defer(thinking=True)
+    await load_names()
     await send_board(interaction, await build_check(interaction.guild, what.value if what else "all"))
 
 
@@ -1090,6 +1119,7 @@ async def weekly_report():
     guild = bot.get_guild(GUILD_ID)
     if guild is None:
         return
+    await load_names()
     board = await build_check(guild, "all")
     board.title = "📋 Weekly — " + board.title
     await post_board_to_staff(board)

@@ -1,4 +1,5 @@
 # Newest first. Format: version | what changed
+2.11.1 | Boards show Discord names instead of raw user IDs
 2.11.0 | /leaderboard shows everyone's current coins before the first coin check
 2.10.0 | /coins import mode: Starting coins only, sets everyone's starting coins at once without grading
 2.9.1 | Clearer /reminders labels
