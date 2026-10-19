@@ -63,7 +63,7 @@ PAGES: list[tuple[str, str, str, str]] = [   # (key, emoji, title, body)
     ("manager", "👑", "Clan Manager Only",
      "These need the **Administrator** permission. If you don't have it, they won't work for you.\n\n"
      "• `/roster rank` · promotions and demotions\n"
-     "• `/roster exempt` · coin check exemptions\n"
+     "• `/roster exempt` · coin check exemptions (staff ranks are exempt automatically)\n"
      "• `/roster start` · fixing starting coins\n"
      "• `/coins import`, `/coins set`, `/coins undo`, `/coins minimum` · coin checks\n"
      "• `/update`, `/restart`, `/reminders` · running the bot\n"

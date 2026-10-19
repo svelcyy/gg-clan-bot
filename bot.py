@@ -536,6 +536,7 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
     if discord_user and store.discord_id_owner(discord_user.id):
         notes_out.append(f"That Discord account is also linked to {', '.join(store.discord_id_owner(discord_user.id))}.")
     rank_name = rank.value if rank else "Member"
+    exempt = exempt or rank_name != "Member"   # staff are always exempt from coin checks
     coins_given = coins is not None
     returning = store.last_known(name, rid)          # were they on the roster before?
     if not coins_given:   # leaving the clan in game wipes Contribution, so everyone starts from 0

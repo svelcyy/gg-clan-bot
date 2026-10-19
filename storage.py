@@ -86,6 +86,7 @@ class Store:
         cols = {r["name"] for r in self.db.execute("PRAGMA table_info(members)")}
         if "start_total" not in cols:  # databases made by older versions
             self.db.execute("ALTER TABLE members ADD COLUMN start_total INTEGER")
+        self.db.execute("UPDATE members SET exempt=1 WHERE rank != 'Member'")   # staff never do coin checks
         self.db.commit()
 
     # ------------------------------------------------------------ settings --
@@ -127,6 +128,7 @@ class Store:
         """Returns False if that Roblox username is already on the roster."""
         if self.get_member(roblox_username):
             return False
+        exempt = exempt or rank != "Member"   # staff are always exempt
         self.db.execute(
             "INSERT INTO members(roblox_username,roblox_id,discord_id,rank,exempt,notes,added_at,start_total) "
             "VALUES(?,?,?,?,?,?,?,?)",
@@ -175,6 +177,8 @@ class Store:
 
     def update_member(self, roblox_username: str, **fields) -> bool:
         allowed = {"roblox_id", "discord_id", "rank", "exempt", "notes", "start_total"}
+        if "rank" in fields:   # staff are always exempt; going back to Member makes them checked again
+            fields.setdefault("exempt", fields["rank"] != "Member")
         sets = {k: (int(v) if k == "exempt" else v) for k, v in fields.items() if k in allowed}
         if not sets:
             return False
