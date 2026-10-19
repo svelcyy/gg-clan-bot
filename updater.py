@@ -42,14 +42,38 @@ def current_version(dest: Path = HERE) -> str:
         return "unknown"
 
 
+def latest_sha(repo: str, branch: str) -> str | None:
+    """Ask GitHub which commit the branch points at right now.
+
+    Uses git's own "info/refs" address: it is never cached and isn't limited to 60 calls an hour
+    like GitHub's API. Returns None if it can't tell (then we fall back to the branch download).
+    """
+    url = f"https://github.com/{repo}.git/info/refs?service=git-upload-pack"
+    req = urllib.request.Request(url, headers={"User-Agent": "git/2.40 gg-clan-bot-updater"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            text = r.read().decode(errors="ignore")
+    except Exception:
+        return None
+    for line in text.split("\n"):
+        if line.rstrip().endswith(f"refs/heads/{branch}"):
+            sha = line.strip().split(" ")[0][-40:]   # strip git's 4-character length prefix
+            if len(sha) == 40:
+                return sha
+    return None
+
+
 def _download_zip(repo: str, branch: str, token: str | None) -> bytes:
-    # cache-buster so a just-pushed change isn't served from a stale cache
-    url = f"https://github.com/{repo}/archive/refs/heads/{branch}.zip?t={int(time.time())}"
-    req = urllib.request.Request(url, headers={"User-Agent": "gg-clan-bot-updater"})
     if token:  # private repositories
         req = urllib.request.Request(f"https://api.github.com/repos/{repo}/zipball/{branch}",
                                      headers={"User-Agent": "gg-clan-bot-updater",
                                               "Authorization": f"Bearer {token}"})
+    else:
+        # Download the exact newest commit: a commit's zip never changes, so it's never stale.
+        sha = latest_sha(repo, branch)
+        ref = sha or f"refs/heads/{branch}"
+        req = urllib.request.Request(f"https://github.com/{repo}/archive/{ref}.zip?t={int(time.time())}",
+                                     headers={"User-Agent": "gg-clan-bot-updater"})
     with urllib.request.urlopen(req, timeout=30) as r:
         return r.read()
 
