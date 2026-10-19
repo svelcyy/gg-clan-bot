@@ -958,11 +958,7 @@ async def help_command(interaction: discord.Interaction, public: bool = False):
 
 # =============================================================== /claninfo ===
 
-# The clan's in-game stats, shown at the bottom of /claninfo. Use \n in CLAN_FOOTER for a new line.
-CLAN_FOOTER = (env("CLAN_FOOTER") or
-               "🪙 123,143,863 Coins · 💎 18,250 Crystals\n"
-               "Clan Level 10 · Battle Pass XP Lv. 50 (Max) · Member Cap Lv. 18\n"
-               "Shop Lv. 4 · Clan Emblem Lv. 1 · Crate Altar Lv. 1").replace("\\n", "\n")
+CLAN_STATS_IMAGE = HERE / "clan_stats.png"   # screenshot of the clan's in-game upgrades, shown at the bottom
 
 
 def next_signups() -> dt.datetime:
@@ -974,27 +970,43 @@ def next_signups() -> dt.datetime:
     return first.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-def claninfo_embed() -> discord.Embed:
+def claninfo_message() -> tuple[discord.Embed, discord.File | None]:
     opens = int(next_signups().timestamp())
-    e = discord.Embed(title="🏰 [gg] Clan", color=reports.BLURPLE, description=(
-        "A Roblox Bedwars clan owned by Anti-Cheat Manager **chase**.\n\n"
-        f"**📅 Signups Next Open (Estimate)**\n<t:{opens}:F> · <t:{opens}:R>\n\n"
-        "**📋 Requirements to Join**\n"
-        "• Active in game (Gold rank, level 50+)\n"
-        "• Good account standing in game (no bans)\n"
-        "• Willing to take part in clan events, like clan wars"))
+    members = [m for m in store.members() if m.roblox_username.lower() != "ggclanholder"]
+    staff = sum(m.rank != "Member" for m in members)
+    e = discord.Embed(title="🏰 About the [gg] Clan", color=reports.BLURPLE, description=(
+        "Welcome to **[gg]**, a Roblox Bedwars clan owned by **chase**, an Anti-Cheat Manager. "
+        "We're an active group that plays together, competes in clan wars and keeps building the clan up every month."))
+    e.add_field(name="📅 Next Signups (Estimate)",
+                value=f"<t:{opens}:D> · <t:{opens}:R>\n-# Signups usually open on the 1st of each month.", inline=False)
+    e.add_field(name="📋 Requirements to Join", value=(
+        "• Active in game: **Gold rank** or higher and **level 50+**\n"
+        "• Good account standing: **no bans** on your account\n"
+        "• Willing to take part in **clan events**, such as clan wars"), inline=False)
+    e.add_field(name="🪙 Staying in the Clan", value=(
+        f"Every member contributes at least **{store.get_minimum():,} coins** to the clan each month. "
+        "Coin checks happen at the start of every month."), inline=False)
+    e.add_field(name="👥 Members", value=f"{len(members)}", inline=True)
+    e.add_field(name="🛡️ Staff", value=f"{staff}", inline=True)
+    e.add_field(name="📊 Clan Upgrades", value="-# Our current upgrades and clan bank:", inline=False)
     guild = bot.get_guild(GUILD_ID)
     if guild and guild.icon:
         e.set_thumbnail(url=guild.icon.url)
-    e.set_footer(text=CLAN_FOOTER)
-    return e
+    e.set_footer(text="Questions? Ask a staff member · /leaderboard shows everyone's coins")
+    file = None
+    if CLAN_STATS_IMAGE.exists():
+        file = discord.File(CLAN_STATS_IMAGE, filename="clan_stats.png")
+        e.set_image(url="attachment://clan_stats.png")
+    return e, file
 
 
 @app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
 @bot.tree.command(name="claninfo", description="About the clan: requirements to join and when signups open")
 @app_commands.guild_only()
 async def claninfo(interaction: discord.Interaction, public: bool = False):
-    await interaction.response.send_message(embed=claninfo_embed(), ephemeral=not public)
+    embed, file = claninfo_message()
+    kwargs = {"file": file} if file else {}
+    await interaction.response.send_message(embed=embed, ephemeral=not public, **kwargs)
 
 
 _mention_cooldown: dict[int, float] = {}

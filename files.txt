@@ -9,3 +9,4 @@ requirements.txt
 help_text.py
 VERSION
 CHANGELOG.txt
+clan_stats.png
