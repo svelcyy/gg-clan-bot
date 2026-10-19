@@ -254,6 +254,8 @@ class Store:
             if previous is None:          # first check since they joined: compare with their starting coins
                 previous = m.start_total
             gained = total - previous if total is not None and previous is not None else None
+            if gained is not None and gained < 0:
+                gained = total    # their number went down: they left and rejoined in game, which resets it to 0
             if m.exempt:
                 status = "Exempt"
             elif total is None and m.added_at > created:

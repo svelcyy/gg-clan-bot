@@ -534,10 +534,8 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
     rank_name = rank.value if rank else "Member"
     coins_given = coins is not None
     returning = store.last_known(name, rid)          # were they on the roster before?
-    restored_coins = not coins_given and bool(returning and returning["coins"])
-    if restored_coins:
-        coins = returning["coins"]                   # pick up where they left off
-    elif not coins_given:
+    restored_coins = False   # leaving the clan in game wipes Contribution, so returning members start from 0
+    if not coins_given:
         coins = 0                                    # no number given: start from 0
     if discord_user is None and returning and returning["discord_id"]:
         try:
@@ -550,8 +548,8 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
     roles = await sync_roles(interaction.guild, discord_user.id if discord_user else None, rank_name)
     group = await sync_group(name, rid, rank_name)
     desc = ("Their next coin check will measure from their starting coins." if coins_given else
-            "Welcome back! They start from their **last known coins**. If that's wrong, the Clan Manager can fix it."
-            if restored_coins else
+            "Welcome back! Their Discord link was restored. Their coins start from **0**, since leaving the clan "
+            "in game resets Contribution." if returning and returning["discord_id"] else
             "No coins given, so they start from **0**. The Clan Manager can change it with `/roster start`.")
     info = [("Rank", rank_name + (" · 🛡️ Exempt" if exempt else ""), True),
             ("Discord", discord_user.mention if discord_user else "Not linked", True),
