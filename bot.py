@@ -144,6 +144,20 @@ GITHUB_TOKEN = env("GITHUB_TOKEN")          # only needed if the repository is p
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 STAFF_ONLY = discord.Permissions(manage_roles=True)
 
+
+class NotAdmin(app_commands.CheckFailure):
+    pass
+
+
+def _is_admin(interaction: discord.Interaction) -> bool:
+    perms = getattr(interaction.user, "guild_permissions", None)
+    if perms and perms.administrator:
+        return True
+    raise NotAdmin()
+
+
+admin_only = app_commands.check(_is_admin)   # Clan Manager commands: needs the Administrator permission
+
 store = Store(DB_PATH)
 
 
@@ -462,6 +476,25 @@ async def load_names():
             return
 
 
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, NotAdmin):
+        text = "🔒 Only the Clan Manager (server admins) can use this command."
+    elif isinstance(error, app_commands.CheckFailure):
+        text = "🔒 You don't have permission to use this command."
+    else:
+        log.error("Command /%s failed", interaction.command.qualified_name if interaction.command else "?",
+                  exc_info=error)
+        text = "⚠️ Something went wrong running that command. Try again, or tell the Clan Manager."
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(embed=simple(text, RED), ephemeral=True)
+        else:
+            await interaction.response.send_message(embed=simple(text, RED), ephemeral=True)
+    except discord.HTTPException:
+        pass
+
+
 # ================================================================ /roster ===
 
 roster_group = app_commands.Group(name="roster", description="Manage the clan roster",
@@ -516,6 +549,7 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
 
 
 @roster_group.command(name="start", description="Set or fix someone's starting coins")
+@admin_only
 @app_commands.describe(coins="Their Contribution number at the point they should be measured from")
 @app_commands.autocomplete(roblox=roster_autocomplete)
 async def roster_start(interaction: discord.Interaction, roblox: str, coins: app_commands.Range[int, 0]):
@@ -594,6 +628,7 @@ async def roster_link(interaction: discord.Interaction, roblox: str, discord_use
 
 
 @roster_group.command(name="exempt", description="Turn coin-check exemption on or off")
+@admin_only
 @app_commands.autocomplete(roblox=roster_autocomplete)
 async def roster_exempt(interaction: discord.Interaction, roblox: str, exempt: bool):
     ok = store.update_member(roblox, exempt=exempt)
@@ -605,6 +640,7 @@ async def roster_exempt(interaction: discord.Interaction, roblox: str, exempt: b
 
 @app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
 @roster_group.command(name="rank", description="Change someone's clan rank")
+@admin_only
 @app_commands.autocomplete(roblox=roster_autocomplete)
 @app_commands.choices(rank=RANK_CHOICES)
 async def roster_rank(interaction: discord.Interaction, roblox: str, rank: app_commands.Choice[str], public: bool = False):
@@ -836,6 +872,7 @@ class ImportModal(discord.ui.Modal, title="Import Coin Check"):
 
 
 @coins_group.command(name="import", description="Import this month's totals: paste them, or attach a file")
+@admin_only
 @app_commands.describe(file="Optional .csv/.txt with one 'username total' per line. Leave empty to paste instead",
                        label="Name for this check, e.g. 'Nov 2026'",
                        mode="Coin check (graded), or just set everyone's starting coins")
@@ -867,6 +904,7 @@ async def coins_results(interaction: discord.Interaction):
 
 
 @coins_group.command(name="set", description="Fix one member's total in the latest check")
+@admin_only
 @app_commands.autocomplete(roblox=roster_autocomplete)
 async def coins_set(interaction: discord.Interaction, roblox: str, total: app_commands.Range[int, 0]):
     cid = store.latest_check_id()
@@ -898,6 +936,7 @@ async def coins_status(interaction: discord.Interaction, roblox: str):
 
 
 @coins_group.command(name="minimum", description="Change the monthly minimum (default 10,000)")
+@admin_only
 async def coins_minimum(interaction: discord.Interaction, amount: app_commands.Range[int, 0]):
     store.set_minimum(amount)
     await interaction.response.send_message(embed=simple(
@@ -905,6 +944,7 @@ async def coins_minimum(interaction: discord.Interaction, amount: app_commands.R
 
 
 @coins_group.command(name="undo", description="Delete the most recent coin check import")
+@admin_only
 @app_commands.describe(confirm="Type the check's name exactly to confirm")
 async def coins_undo(interaction: discord.Interaction, confirm: str):
     cid = store.latest_check_id()
@@ -1136,7 +1176,8 @@ async def mystatus(interaction: discord.Interaction, current: Optional[app_comma
 
 @app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
 @bot.tree.command(name="update", description="Download the newest bot version and restart")
-@app_commands.default_permissions(manage_roles=True)
+@admin_only
+@app_commands.default_permissions(administrator=True)
 @app_commands.guild_only()
 async def update(interaction: discord.Interaction, public: bool = False):
     await interaction.response.defer(ephemeral=not public, thinking=True)   # only you see this
@@ -1170,7 +1211,8 @@ async def update(interaction: discord.Interaction, public: bool = False):
 
 @app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
 @bot.tree.command(name="restart", description="Restart the bot (no website needed)")
-@app_commands.default_permissions(manage_roles=True)
+@admin_only
+@app_commands.default_permissions(administrator=True)
 @app_commands.guild_only()
 async def restart(interaction: discord.Interaction, public: bool = False):
     up = (dt.datetime.now(dt.timezone.utc) - STARTED_AT).total_seconds()
@@ -1332,7 +1374,8 @@ async def _wait_ready_reminders():
 
 @app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
 @bot.tree.command(name="reminders", description="See the reminder settings and send a test ping")
-@app_commands.default_permissions(manage_roles=True)
+@admin_only
+@app_commands.default_permissions(administrator=True)
 @app_commands.guild_only()
 async def reminders(interaction: discord.Interaction, public: bool = False):
     tz = reminder_tz()

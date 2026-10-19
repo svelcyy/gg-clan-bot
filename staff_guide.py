@@ -27,17 +27,14 @@ PAGES: list[tuple[str, str, str, str]] = [   # (key, emoji, title, body)
      "3. Roblox group: their join request is accepted (if sent) and they get their rank's role.\n"
      "4. You get a private summary, and a **New Clan Member** card goes to the roster log.\n\n"
      "Read the summary: if something couldn't be done (for example no join request yet), it says so. "
-     "Get **coins** right, since their first coin check measures from it. Fix it with `/roster start`."),
+     "Get **coins** right, since their first coin check measures from it. If it's wrong, tell the Clan Manager."),
     ("change", "✏️", "Changing a Member",
-     "**`/roster rank`** · Promote or demote. Swaps their Discord and Roblox group roles and posts a "
-     "**Promoted** / **Demoted** card.\n`/roster rank roblox:zayn rank:Officer`\n\n"
      "**`/roster link`** · Add or change someone's Discord account. Also gives them the right roles.\n"
      "`/roster link roblox:pramishp4 discord_user:@1TAP`\n\n"
-     "**`/roster exempt`** · Make someone skip coin checks (usually staff), or stop skipping.\n"
-     "`/roster exempt roblox:zayn exempt:True`\n\n"
-     "**`/roster note`** · Leave a note, like \"on vacation until Dec\". Leave it empty to clear it.\n\n"
-     "**`/roster start`** · Fix someone's starting coins if they were entered wrong.\n"
-     "`/roster start roblox:pramishp4 coins:863128`\n\n"
+     "**`/roster note`** · Leave a note, like \"on vacation until Dec\". Leave it empty to clear it.\n"
+     "`/roster note roblox:pramishp4 note:on vacation until Dec`\n\n"
+     "**Promotions, demotions, exemptions and starting coins** are handled by the Clan Manager "
+     "(`/roster rank`, `/roster exempt`, `/roster start`). If one is needed, let them know.\n\n"
      "-# The bot never changes anyone with a higher Roblox group role (like Head Administrator). "
      "It leaves them alone and says so."),
     ("remove", "👋", "Removing a Member",
@@ -56,32 +53,29 @@ PAGES: list[tuple[str, str, str, str]] = [   # (key, emoji, title, body)
      "**`/coins results`** · The latest coin check: Everyone, Failed, Passed, Missing, New and Exempt.\n\n"
      "**`/check`** · Who needs **gg Member** or a Roblox clan role, and who has one but isn't on the roster. "
      "It only reports, and also runs once a week in the staff channel. Fix what it finds with "
-     "`/roster add`, `/roster link` or `/roster rank`.\n\n"
+     "`/roster add` or `/roster link`, or ask the Clan Manager for rank changes.\n\n"
      "**`/leaderboard`** · Everyone's coins and gains, posted in the channel.\n\n"
      "-# On any list, use the menu to switch lists and the arrows to change pages."),
-    ("bot", "⚙️", "Keeping the Bot Running",
-     "**`/botinfo`** · Uptime, ping, version and the latest changes.\n"
-     "**`/restart`** · Turns the bot off and on again. Use it if the bot seems stuck.\n"
-     "**`/update`** · Gets the newest version. Run it when the Clan Manager says an update is out.\n"
-     "**`/reminders`** · When the monthly coin check reminder goes off, plus a test ping.\n\n"
-     "If the bot is offline or commands say **\"The application did not respond\"**, these can't reach it. "
-     "Tell the Clan Manager."),
-    ("manager", "🔒", "Leave to the Clan Manager",
-     "You can see these, but please don't run them. They change coin check results for the whole clan.\n\n"
-     "• `/coins import` · imports the monthly coin check\n"
-     "• `/coins set` · changes someone's number in a coin check\n"
-     "• `/coins undo` · deletes the latest coin check\n"
-     "• `/coins minimum` · changes the monthly minimum\n"
-     "• `/roster reset` · wipes everything (server admins only)\n\n"
-     "If a member says their result is wrong, check `/coins status` and pass it on to the Clan Manager."),
+    ("bot", "⚙️", "If the Bot Has a Problem",
+     "**`/botinfo`** · Uptime, ping, version and the latest changes.\n\n"
+     "If the bot seems stuck, is offline, or commands say **\"The application did not respond\"**, "
+     "tell the Clan Manager. They can restart or update it."),
+    ("manager", "👑", "Clan Manager Only",
+     "These need the **Administrator** permission. If you don't have it, they won't work for you.\n\n"
+     "• `/roster rank` · promotions and demotions\n"
+     "• `/roster exempt` · coin check exemptions\n"
+     "• `/roster start` · fixing starting coins\n"
+     "• `/coins import`, `/coins set`, `/coins undo`, `/coins minimum` · coin checks\n"
+     "• `/update`, `/restart`, `/reminders` · running the bot\n"
+     "• `/roster reset` · wipes everything\n\n"
+     "If a member says their coin check result is wrong, check `/coins status` and pass it on to the Clan Manager."),
     ("quick", "⚡", "Quick Reference",
      "**Someone joined the clan** · `/roster add`\n"
-     "**Promoted or demoted** · `/roster rank`\n"
+     "**Someone left the clan** · `/roster remove`\n"
      "**Needs their Discord linked** · `/roster link`\n"
-     "**Left the clan** · `/roster remove`\n"
-     "**Starting coins are wrong** · `/roster start`\n"
-     "**Staff shouldn't be coin checked** · `/roster exempt`\n"
+     "**Leave a note on someone** · `/roster note`\n"
      "**Check everyone's roles** · `/check`\n"
      "**One member's coins** · `/coins status`\n"
-     "**The bot seems stuck** · `/restart`"),
+     "**Promotion, demotion, exemption or wrong coins** · ask the Clan Manager\n"
+     "**The bot has a problem** · tell the Clan Manager"),
 ]

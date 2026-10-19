@@ -145,21 +145,27 @@ COMMANDS: list[HelpEntry] = [
               "Run this after Claude says an update has been pushed. The bot is back in a few seconds."),
 ]
 
+# Clan Manager commands: need the Administrator permission
+ADMIN_ONLY = {"/roster rank", "/roster start", "/roster exempt", "/roster reset", "/coins import", "/coins set",
+              "/coins minimum", "/coins undo", "/update", "/restart", "/reminders"}
+
 CATEGORY_EMOJI = {"Everyone": "👋", "Roster": "📋", "Coin checks": "🪙", "Bot": "⚙️"}
 
 
 def overview() -> str:
-    lines = ["-# Pick a command from the menu below to see how to use it. 🔒 = staff only",
+    lines = ["-# Pick a command from the menu below to see how to use it. 🔒 = staff only · 👑 = Clan Manager only",
              "-# Replies that only you see have a **public** option to show them to everyone.", ""]
     for cat in CATEGORY_EMOJI:
         lines.append(f"**{CATEGORY_EMOJI[cat]} {cat}**")
         for c in (c for c in COMMANDS if c.category == cat):
-            lines.append(f"`{c.name}`{' 🔒' if c.staff else ''} · {c.short}")
+            mark = " 👑" if c.name in ADMIN_ONLY else " 🔒" if c.staff else ""
+            lines.append(f"`{c.name}`{mark} · {c.short}")
         lines.append("")
     return "\n".join(lines).strip()
 
 
 def detail(name: str) -> str:
     c = next(c for c in COMMANDS if c.name == name)
-    who = "🔒 Staff only (needs Manage Roles)" if c.staff else "👋 Anyone can use this"
+    who = ("👑 Clan Manager only (needs Administrator)" if c.name in ADMIN_ONLY
+           else "🔒 Staff only (needs Manage Roles)" if c.staff else "👋 Anyone can use this")
     return f"-# {CATEGORY_EMOJI[c.category]} {c.category} · {who}\n\n{c.details}\n\n**How to use it**\n`{c.how}`"
