@@ -10,3 +10,4 @@ help_text.py
 VERSION
 CHANGELOG.txt
 clan_stats.png
+staff_guide.py

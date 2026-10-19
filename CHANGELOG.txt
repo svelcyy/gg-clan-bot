@@ -1,4 +1,5 @@
 # Newest first. Format: version | what changed
+2.14.0 | New /staffguide for staff, right inside Discord
 2.13.2 | /claninfo rewritten: clearer wording, more info and the clan upgrades screenshot
 2.13.1 | Clan stats in the /claninfo footer
 2.13.0 | New /claninfo, and the bot answers when someone pings it

@@ -120,6 +120,11 @@ COMMANDS: list[HelpEntry] = [
               "/coins undo confirm:Nov 2026",
               "Type the check's name exactly to confirm."),
 
+    HelpEntry("/staffguide", "Bot", True,
+              "The staff guide: how to add, rank and remove members",
+              "/staffguide",
+              "A short guide with a page for each job. Pick a page from the menu. "
+              "Set **public** to True to show it to the channel."),
     HelpEntry("/check", "Bot", True,
               "Compare the roster with Discord roles and the Roblox group",
               "/check  ·  /check what:Roblox group only",
