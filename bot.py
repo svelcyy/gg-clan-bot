@@ -686,10 +686,38 @@ def preview_embed(label: str, p: dict) -> discord.Embed:
     return e
 
 
+def start_preview_embed(p: dict) -> discord.Embed:
+    members = {m.roblox_username: m for m in store.members()}
+    from_zero = sum(1 for k in p["matched"] if not (members.get(k) and members[k].start_total))
+    e = discord.Embed(title="🏁 Starting Coins Preview", color=reports.AMBER,
+                      description="This sets each member's **starting coins** to these numbers. Nothing is graded, "
+                                  "and no coin check is saved. The next coin check measures from here.\n"
+                                  "Nothing is saved until you click **Save**.")
+    e.add_field(name="Matched", value=f"{len(p['matched'])} of {len(members)} on the roster", inline=True)
+    e.add_field(name="Currently at 0 or Blank", value=str(from_zero), inline=True)
+    if p["renames"]:
+        e.add_field(name=f"🔁 Changed Roblox Username ({len(p['renames'])})",
+                    value=names_list([f"{o} → {n}" for o, n in p["renames"]]) +
+                    "\nTheir roster entry, Discord link and history will move to the new name.", inline=False)
+    if p["missing"]:
+        e.add_field(name=f"❓ Not in This Import ({len(p['missing'])})", value=names_list(p["missing"]) +
+                    "\nTheir starting coins stay as they are.", inline=False)
+    if p["unknown"]:
+        e.add_field(name=f"⚠️ Not on the Roster ({len(p['unknown'])})", value=names_list(p["unknown"]) +
+                    "\nSkipped. Add them with `/roster add` and their number.", inline=False)
+    checks = store.latest_check_id()
+    if checks:
+        e.add_field(name="⚠️ Note", value=f"There's already a saved coin check (**{store.check_label(checks)}**). "
+                    "The next check compares with that instead of these starting coins. "
+                    "Use `/coins undo` to delete old test checks first.", inline=False)
+    e.set_footer(text=f"{p['count']} lines read")
+    return e
+
+
 class ImportConfirm(discord.ui.View):
-    def __init__(self, owner_id: int, label: str, prepared: dict):
+    def __init__(self, owner_id: int, label: str, prepared: dict, starting: bool = False):
         super().__init__(timeout=900)
-        self.owner_id, self.label, self.p = owner_id, label, prepared
+        self.owner_id, self.label, self.p, self.starting = owner_id, label, prepared, starting
         self.done = False
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -709,6 +737,18 @@ class ImportConfirm(discord.ui.View):
                 renamed.append(new)
         names = dict(self.p["renames"])
         totals = {names.get(k, k): v for k, v in self.p["matched"].items()}
+        if self.starting:
+            for name, total in totals.items():
+                store.update_member(name, start_total=total)
+            for item in self.children:
+                item.disabled = True
+            await interaction.response.edit_message(embed=simple(
+                f"Set starting coins for **{len(totals)}** members." +
+                (f" Updated {len(renamed)} renamed Roblox account(s)." if renamed else "") +
+                " The next coin check measures from these numbers.", GREEN, "✅ Starting Coins Saved"), view=self)
+            await post_alert(simple(f"{interaction.user.mention} set starting coins for {len(totals)} members.",
+                                    BLURPLE, "🏁 Starting Coins Updated"))
+            return
         totals.update(self.p["unknown_totals"])
         cid, unknown = store.import_check(self.label, totals, str(interaction.user))
         for item in self.children:
@@ -730,7 +770,7 @@ class ImportConfirm(discord.ui.View):
                                                 view=self)
 
 
-async def show_preview(interaction: discord.Interaction, text: str, label: str | None):
+async def show_preview(interaction: discord.Interaction, text: str, label: str | None, starting: bool = False):
     label = (label or "").strip() or dt.date.today().strftime("%d %b %Y")
     prepared = await prepare_import(text)
     if prepared is None:
@@ -738,8 +778,8 @@ async def show_preview(interaction: discord.Interaction, text: str, label: str |
             "I couldn't find any lines like `username 875128` in that. Put one person per line: their Roblox "
             "username, then their Contribution number.", RED), ephemeral=True)
         return
-    await interaction.followup.send(embed=preview_embed(label, prepared),
-                                    view=ImportConfirm(interaction.user.id, label, prepared), ephemeral=True)
+    await interaction.followup.send(embed=start_preview_embed(prepared) if starting else preview_embed(label, prepared),
+                                    view=ImportConfirm(interaction.user.id, label, prepared, starting), ephemeral=True)
 
 
 class ImportModal(discord.ui.Modal, title="Import Coin Check"):
@@ -748,30 +788,37 @@ class ImportModal(discord.ui.Modal, title="Import Coin Check"):
     totals_input = discord.ui.TextInput(label="Paste totals: one per line", style=discord.TextStyle.paragraph,
                                         placeholder="pramishp4 875128\n2pfaltac 365000\n…", max_length=4000)
 
-    def __init__(self, label: str | None):
-        super().__init__()
+    def __init__(self, label: str | None, starting: bool = False):
+        super().__init__(title="Set Starting Coins" if starting else "Import Coin Check")
+        self.starting = starting
         if label:
             self.label_input.default = label
+        if starting:
+            self.remove_item(self.label_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True, thinking=True)
-        await show_preview(interaction, self.totals_input.value, self.label_input.value)
+        await show_preview(interaction, self.totals_input.value, self.label_input.value, self.starting)
 
 
 @coins_group.command(name="import", description="Import this month's totals: paste them, or attach a file")
 @app_commands.describe(file="Optional .csv/.txt with one 'username total' per line. Leave empty to paste instead",
-                       label="Name for this check, e.g. 'Nov 2026'")
+                       label="Name for this check, e.g. 'Nov 2026'",
+                       mode="Coin check (graded), or just set everyone's starting coins")
+@app_commands.choices(mode=[app_commands.Choice(name="Coin check (graded)", value="check"),
+                            app_commands.Choice(name="Starting coins only (not graded)", value="start")])
 async def coins_import(interaction: discord.Interaction, file: Optional[discord.Attachment] = None,
-                       label: Optional[str] = None):
+                       label: Optional[str] = None, mode: Optional[app_commands.Choice[str]] = None):
+    starting = bool(mode and mode.value == "start")
     if file is None:
-        await interaction.response.send_modal(ImportModal(label))
+        await interaction.response.send_modal(ImportModal(label, starting))
         return
     await interaction.response.defer(ephemeral=True, thinking=True)
     if file.size > 500_000:
         await interaction.followup.send(embed=simple("That file is too big. It should be a small list.", RED),
                                         ephemeral=True)
         return
-    await show_preview(interaction, (await file.read()).decode("utf-8-sig", errors="replace"), label)
+    await show_preview(interaction, (await file.read()).decode("utf-8-sig", errors="replace"), label, starting)
 
 
 @coins_group.command(name="results", description="Show the latest coin check results")

@@ -91,7 +91,9 @@ COMMANDS: list[HelpEntry] = [
               "and anyone who changed their Roblox username (spotted by their Roblox account, so their "
               "Discord link and history move with them). Nothing is saved until you click **✅ Save**. "
               "Then the results are posted here and in the staff channel. Roster and Discord data are never changed, "
-              "except to update a renamed Roblox username."),
+              "except to update a renamed Roblox username.\n"
+              "Pick **mode: Starting coins only** to set everyone's starting coins in one go instead "
+              "(nothing graded, no check saved)."),
     HelpEntry("/coins results", "Coin checks", True,
               "Show the latest coin check again",
               "/coins results",
