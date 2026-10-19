@@ -122,6 +122,11 @@ COMMANDS: list[HelpEntry] = [
               "/reminders",
               "On the 1st of every month the bot pings you to do the coin check. "
               "It can also warn you before the host needs a restart (if RESTART_REMINDER_DAYS is set)."),
+    HelpEntry("/restart", "Bot", True,
+              "Restart the bot without opening the website",
+              "/restart",
+              "Turns the bot off and on again in a few seconds. Handy if something seems stuck, "
+              "or when the restart reminder pings you. Also picks up any new update."),
     HelpEntry("/update", "Bot", True,
               "Download the newest bot version and restart",
               "/update",

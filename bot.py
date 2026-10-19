@@ -970,6 +970,23 @@ async def update(interaction: discord.Interaction):
     os.execv(sys.executable, [sys.executable, str(HERE / "main.py")])
 
 
+# ================================================================ /restart ===
+
+@bot.tree.command(name="restart", description="Restart the bot (no website needed)")
+@app_commands.default_permissions(manage_roles=True)
+@app_commands.guild_only()
+async def restart(interaction: discord.Interaction):
+    up = (dt.datetime.now(dt.timezone.utc) - STARTED_AT).total_seconds()
+    e = update_embed("🔄 Restarting", "The bot will be back in a few seconds.", reports.BLURPLE, fields=[
+        ("Version", f"v{RUNNING_VERSION}", True),
+        ("Was Online For", nice_duration(up), True),
+    ])
+    await interaction.response.send_message(embed=e, ephemeral=True)
+    log.info("Restart requested by %s", interaction.user)
+    await asyncio.sleep(2)
+    os.execv(sys.executable, [sys.executable, str(HERE / "main.py")])
+
+
 # ================================================================== /check ===
 
 async def build_check(guild: discord.Guild, which: str) -> Board:
@@ -1085,7 +1102,7 @@ def restart_reminder_embed() -> discord.Embed:
     e = discord.Embed(title="🔄 Restart Needed Soon", color=0xE67E22,
                       description="The host stops the bot after "
                                   f"{RESTART_REMINDER_DAYS:g} days. Open the Wispbyte panel and press **Restart** "
-                                  "(or renew the server if it asks) to keep the bot online.")
+                                  "(or renew the server if it asks) to keep the bot online. `/restart` may also work.")
     e.add_field(name="Online For", value=nice_duration(up.total_seconds()), inline=True)
     e.add_field(name="Stops In About", value=nice_duration(max(0, RESTART_REMINDER_DAYS * 86400 - up.total_seconds())), inline=True)
     return e
