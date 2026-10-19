@@ -861,6 +861,24 @@ async def help_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, view=HelpView(), ephemeral=True)
 
 
+# ============================================================= /leaderboard ===
+
+@bot.tree.command(name="leaderboard", description="See the latest coin check: everyone's coins and gains")
+@app_commands.guild_only()
+async def leaderboard(interaction: discord.Interaction):
+    cid = store.latest_check_id()
+    if not cid:
+        await interaction.response.send_message(embed=simple(
+            "There hasn't been a coin check yet. Check back after the next one!", reports.BLURPLE, "🏆 Leaderboard"),
+            ephemeral=True)
+        return
+    await interaction.response.defer(ephemeral=True)
+    prev = store.previous_check_id(cid)
+    board = reports.leaderboard_board(store.results(cid), store.check_label(cid),
+                                      store.check_label(prev) if prev else None, store.get_minimum())
+    await send_board(interaction, board, ephemeral=True)
+
+
 # ================================================================ /botinfo ===
 
 @bot.tree.command(name="botinfo", description="Bot stats: uptime, ping, version and latest changes")

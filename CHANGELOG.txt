@@ -1,4 +1,5 @@
 # Newest first. Format: version | what changed
+2.7.0 | New /leaderboard for everyone: the latest coin check with Discord users, coins and gains
 2.6.0 | New /botinfo: uptime, ping, version, roster size and the latest changes
 2.5.2 | Updates now arrive instantly (no more waiting for GitHub's cache)
 2.5.1 | Test update: the bot version now shows at the bottom of /mystatus and /coins status

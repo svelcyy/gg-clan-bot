@@ -130,6 +130,36 @@ def coin_board(results: list[Result], label: str, prev_label: str | None, minimu
     return Board(f"🪙 Coin Check — {label}", " · ".join(parts), lists, color, csv_text=csv_text)
 
 
+# ------------------------------------------------------ public leaderboard ---
+
+def leaderboard_board(results: list[Result], label: str, prev_label: str | None, minimum: int) -> Board:
+    """The member-facing view of the latest coin check: Discord user, coins and gain. No staff details."""
+    def who(r: Result) -> str:
+        return f"<@{r.member.discord_id}>" if r.member.discord_id else f"**{r.member.roblox_username}**"
+
+    def entry(r: Result) -> Entry:
+        sub = f"{r.member.roblox_username} · Total {n(r.total)}"
+        if r.status == "Pass":
+            return Entry(f"{who(r)} · **+{r.gained:,}** ✅", sub)
+        if r.status == "Fail":
+            return Entry(f"{who(r)} · **+{r.gained:,}** ❌", f"{sub} · Needs {r.short_by:,} more")
+        if r.status in ("Baseline", "New"):
+            return Entry(f"{who(r)} · 🆕", sub if r.total is not None else f"{r.member.roblox_username} · Joined recently")
+        return Entry(f"{who(r)} · ❓", f"{r.member.roblox_username} · Not in this check")
+
+    shown = [r for r in results if r.status != "Exempt"]
+    checked = sorted([r for r in shown if r.status in ("Pass", "Fail")], key=lambda r: -(r.gained or 0))
+    rest = sorted([r for r in shown if r.status in ("Baseline", "New")], key=lambda r: -(r.total or 0))
+    missing = [r for r in shown if r.status == "Missing"]
+    ranked = checked + rest + missing
+    lists = [ListView("🏆 Top Gains", [entry(r) for r in ranked], ranked=bool(checked), medal_limit=len(checked)),
+             ListView("🔤 A–Z", [entry(r) for r in sorted(shown, key=lambda r: r.member.roblox_username.lower())])]
+    passed = sum(r.status == "Pass" for r in shown)
+    header = " · ".join([f"Compared with {prev_label}" if prev_label else "Compared with starting coins",
+                         f"Minimum {minimum:,}", f"✅ {passed} of {len(checked)} passed" if checked else "First check"])
+    return Board(f"🏆 Coin Check — {label}", header, lists, GREEN if checked else BLURPLE)
+
+
 # ----------------------------------------------------------------- roster ---
 
 def roster_board(members: list[Member], latest: dict[str, Result] | None = None,

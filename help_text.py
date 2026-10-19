@@ -20,6 +20,11 @@ COMMANDS: list[HelpEntry] = [
               "/mystatus  ·  /mystatus current:15000",
               "Only you can see the answer. Add **current** (your Contribution number in game right now) "
               "and it tells you how much more you need this month."),
+    HelpEntry("/leaderboard", "Everyone", False,
+              "See the latest coin check: everyone's coins and gains",
+              "/leaderboard",
+              "Shows every member's Discord, Roblox name, total coins and how much they gained, best first. "
+              "Switch to A–Z with the menu. Only you see it."),
     HelpEntry("/botinfo", "Everyone", False,
               "Bot stats: uptime, ping, version and latest changes",
               "/botinfo",
