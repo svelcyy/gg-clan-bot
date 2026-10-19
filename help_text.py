@@ -20,6 +20,11 @@ COMMANDS: list[HelpEntry] = [
               "/mystatus  ·  /mystatus current:15000",
               "Only you can see the answer. Add **current** (your Contribution number in game right now) "
               "and it tells you how much more you need this month."),
+    HelpEntry("/claninfo", "Everyone", False,
+              "About the clan: requirements to join and when signups open",
+              "/claninfo",
+              "Shows who runs the clan, what you need to join, and when signups are expected to open next "
+              "(the 1st of every month). Tip: pinging the bot points people here too."),
     HelpEntry("/leaderboard", "Everyone", False,
               "See the latest coin check: everyone's coins and gains",
               "/leaderboard",

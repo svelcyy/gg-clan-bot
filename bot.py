@@ -956,6 +956,63 @@ async def help_command(interaction: discord.Interaction, public: bool = False):
     await interaction.response.send_message(embed=embed, view=HelpView(), ephemeral=not public)
 
 
+# =============================================================== /claninfo ===
+
+CLAN_FOOTER = env("CLAN_FOOTER", "")   # the clan's in-game stats, shown at the bottom of /claninfo
+
+
+def next_signups() -> dt.datetime:
+    """Midnight on the 1st of next month (or today, if it's the 1st), in the clan's time zone."""
+    now = dt.datetime.now(reminder_tz())
+    if now.day == 1:
+        return now.replace(hour=0, minute=0, second=0, microsecond=0)
+    first = (now.replace(day=1) + dt.timedelta(days=32)).replace(day=1)
+    return first.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def claninfo_embed() -> discord.Embed:
+    opens = int(next_signups().timestamp())
+    e = discord.Embed(title="🏰 [gg] Clan", color=reports.BLURPLE, description=(
+        "A Roblox Bedwars clan owned by Anti-Cheat Manager **chase**.\n\n"
+        f"**📅 Signups Next Open (Estimate)**\n<t:{opens}:F> · <t:{opens}:R>\n\n"
+        "**📋 Requirements to Join**\n"
+        "• Active in game (Gold rank, level 50+)\n"
+        "• Good account standing in game (no bans)\n"
+        "• Willing to take part in clan events, like clan wars"))
+    guild = bot.get_guild(GUILD_ID)
+    if guild and guild.icon:
+        e.set_thumbnail(url=guild.icon.url)
+    members = [m for m in store.members() if m.roblox_username.lower() != "ggclanholder"]
+    e.set_footer(text=CLAN_FOOTER or f"{len(members)} members")
+    return e
+
+
+@app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
+@bot.tree.command(name="claninfo", description="About the clan: requirements to join and when signups open")
+@app_commands.guild_only()
+async def claninfo(interaction: discord.Interaction, public: bool = False):
+    await interaction.response.send_message(embed=claninfo_embed(), ephemeral=not public)
+
+
+_mention_cooldown: dict[int, float] = {}
+
+
+@bot.event
+async def on_message(message: discord.Message):
+    """Answer people who ping the bot (not replies to it, and at most once a minute per person)."""
+    if message.author.bot or not message.guild or bot.user is None:
+        return
+    if f"<@{bot.user.id}>" not in message.content and f"<@!{bot.user.id}>" not in message.content:
+        return
+    now = asyncio.get_running_loop().time()
+    if now - _mention_cooldown.get(message.author.id, -999) < 60:
+        return
+    _mention_cooldown[message.author.id] = now
+    await message.reply("Hey there! Have any questions about the clan? Use my `/claninfo` command to see "
+                        "everything there is to know about our amazing clan, as well as when the next signups are!",
+                        mention_author=False, allowed_mentions=discord.AllowedMentions.none())
+
+
 # ============================================================= /leaderboard ===
 
 @app_commands.describe(public="Show the reply to everyone in the channel (default: yes)")
