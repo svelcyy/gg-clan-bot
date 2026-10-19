@@ -283,7 +283,10 @@ class Store:
             out.append(("Joined", m.start_total, None))
             prev = m.start_total
         for r in rows:
-            out.append((r["label"], r["total"], None if prev is None else r["total"] - prev))
+            gain = None if prev is None else r["total"] - prev
+            if gain is not None and gain < 0:
+                gain = r["total"]   # their number went down: Contribution was reset by leaving and rejoining
+            out.append((r["label"], r["total"], gain))
             prev = r["total"]
         return list(reversed(out))[:limit]
 

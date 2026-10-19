@@ -1,4 +1,5 @@
 # Newest first. Format: version | what changed
+2.16.0 | /mystatus is now /userinfo: full Discord profile plus a clan section for members
 2.15.5 | /roster remove follows rank: you can only remove people ranked below you
 2.15.4 | Re-added members start from 0 again (leaving resets Contribution); a dropped total counts from 0 instead of failing
 2.15.3 | Re-adding a former member restores their last known coins and Discord link

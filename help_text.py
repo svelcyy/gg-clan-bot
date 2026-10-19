@@ -15,11 +15,12 @@ class HelpEntry:
 
 
 COMMANDS: list[HelpEntry] = [
-    HelpEntry("/mystatus", "Everyone", False,
-              "See your own coin checks and how much you still need",
-              "/mystatus  ·  /mystatus current:15000",
-              "Only you can see the answer. Add **current** (your Contribution number in game right now) "
-              "and it tells you how much more you need this month."),
+    HelpEntry("/userinfo", "Everyone", False,
+              "Someone's Discord info, plus their clan rank and coins",
+              "/userinfo  ·  /userinfo user:@1TAP  ·  /userinfo current:15000",
+              "Shows their Discord profile (account age, badges, roles, when they joined) and, for clan members, "
+              "their Roblox account, rank, Contribution and last coin check. Leave **user** empty for yourself. "
+              "Add **current** (your Contribution in game right now) to see how much more you need this month."),
     HelpEntry("/claninfo", "Everyone", False,
               "About the clan: requirements to join and when signups open",
               "/claninfo",

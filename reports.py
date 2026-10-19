@@ -297,7 +297,7 @@ def check_board(roster: list[Member],
 
 def member_status(m: Member, history: list[tuple[str, int, int | None]], minimum: int,
                   current: int | None = None) -> tuple[str, str, int]:
-    """(title, description, colour) for /mystatus and /coins status."""
+    """(title, description, colour) for /coins status."""
     lines = [f"-# {m.rank}" + (" · 🛡️ Exempt from coin checks" if m.exempt else "") + f" · Minimum {minimum:,}", ""]
     color = PURPLE if m.exempt else BLURPLE
     if not history:
