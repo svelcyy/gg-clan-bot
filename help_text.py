@@ -73,10 +73,15 @@ COMMANDS: list[HelpEntry] = [
               "Can't be undone. Server admins only, and you have to type RESET in capitals."),
 
     HelpEntry("/coins import", "Coin checks", True,
-              "Import this month's totals and see who passed",
-              "/coins import file:(attach .csv) label:Nov 2026",
-              "The file has one `robloxusername,total` per line (Claude can make it from your screenshots). "
-              "Results are posted here and in the staff channel."),
+              "Import this month's totals, check the preview, then save",
+              "/coins import label:Nov 2026  (then paste)  ·  or attach a file",
+              "Leave **file** empty and a box opens: paste one `username number` per line "
+              "(Claude can make the list from your screenshots).\n"
+              "You get a private **preview** first: who matched, who's missing, who isn't on the roster, "
+              "and anyone who changed their Roblox username (spotted by their Roblox account, so their "
+              "Discord link and history move with them). Nothing is saved until you click **✅ Save**. "
+              "Then the results are posted here and in the staff channel. Roster and Discord data are never changed, "
+              "except to update a renamed Roblox username."),
     HelpEntry("/coins results", "Coin checks", True,
               "Show the latest coin check again",
               "/coins results",

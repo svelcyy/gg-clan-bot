@@ -33,7 +33,7 @@ import reports
 import roblox as rbx
 import updater
 from reports import AMBER, GREEN, PURPLE, RED, Board
-from storage import RANKS, Store, parse_totals_csv
+from storage import RANKS, Store, match_totals, parse_totals_csv
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -542,24 +542,151 @@ def coin_board(cid: int, unknown: list[str] | None = None) -> Board:
                               csv_text=store.export_csv())
 
 
-@coins_group.command(name="import", description="Import this month's totals (a .csv file: username,total)")
-@app_commands.describe(file="CSV with one 'roblox_username,total' per line", label="Name for this check, e.g. 'Nov 2026'")
-async def coins_import(interaction: discord.Interaction, file: discord.Attachment, label: Optional[str] = None):
-    await interaction.response.defer()
-    if file.size > 500_000:
-        await interaction.followup.send(embed=simple("That file is too big. It should be a small .csv list.", RED))
-        return
-    raw = (await file.read()).decode("utf-8-sig", errors="replace")
-    totals = parse_totals_csv(raw)
+def names_list(names: list[str], limit: int = 15) -> str:
+    shown = ", ".join(names[:limit])
+    return shown + (f" and {len(names) - limit} more" if len(names) > limit else "")
+
+
+async def prepare_import(text: str) -> dict | None:
+    """Read the pasted/uploaded totals and match them to the roster, recognising renamed Roblox accounts."""
+    totals = parse_totals_csv(text)
     if not totals:
-        await interaction.followup.send(embed=simple("I couldn't find any `username,total` lines in that file.", RED))
+        return None
+    roster = store.members()
+    ids: dict[str, int] = {}
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as s:
+            need = [m.roblox_username for m in roster if not m.roblox_id]   # learn roster ids once
+            if need:
+                found = await rbx.lookup_usernames(s, need)
+                for m in roster:
+                    if m.roblox_username.lower() in found:
+                        store.update_member(m.roblox_username, roblox_id=found[m.roblox_username.lower()][0])
+                roster = store.members()
+            on_roster = {m.roblox_username.lower() for m in roster}
+            strangers = [n for n in totals if n.lower() not in on_roster]
+            if strangers:
+                ids = {k: v[0] for k, v in (await rbx.lookup_usernames(s, strangers)).items()}
+    except Exception:
+        log.exception("Roblox lookup during import failed")  # still works, just without rename detection
+    matched, renames, unknown = match_totals(totals, roster, ids)
+    imported = {m.roblox_username for m in roster if m.roblox_username in matched}
+    missing = [m.roblox_username for m in roster if not m.exempt and m.roblox_username not in imported]
+    return {"matched": matched, "renames": renames, "unknown": unknown, "missing": missing,
+            "unknown_totals": {u: totals[u] for u in unknown}, "count": len(totals)}
+
+
+def preview_embed(label: str, p: dict) -> discord.Embed:
+    results = store.preview(p["matched"])
+    passed = sum(r.status == "Pass" for r in results)
+    failed = sum(r.status == "Fail" for r in results)
+    new = sum(r.status == "Baseline" for r in results)
+    e = discord.Embed(title=f"🪙 Coin Check Preview — {label}", color=reports.AMBER,
+                      description="Nothing is saved until you click **Save**.")
+    e.add_field(name="Matched", value=f"{len(p['matched'])} of {len(store.members())} on the roster", inline=True)
+    e.add_field(name="Would Pass", value=str(passed), inline=True)
+    e.add_field(name="Would Fail", value=str(failed) + (f" · 🆕 {new}" if new else ""), inline=True)
+    if p["renames"]:
+        e.add_field(name=f"🔁 Changed Roblox Username ({len(p['renames'])})",
+                    value=names_list([f"{o} → {n}" for o, n in p["renames"]]) +
+                    "\nTheir roster entry, Discord link and history will move to the new name.", inline=False)
+    if p["missing"]:
+        e.add_field(name=f"❓ Not in This Import ({len(p['missing'])})", value=names_list(p["missing"]), inline=False)
+    if p["unknown"]:
+        e.add_field(name=f"⚠️ Not on the Roster ({len(p['unknown'])})", value=names_list(p["unknown"]) +
+                    "\nTheir numbers are kept in case you add them later.", inline=False)
+    if not (p["renames"] or p["missing"] or p["unknown"]):
+        e.add_field(name="✅ Everything Matches", value="Every roster member is in this import.", inline=False)
+    e.set_footer(text=f"{p['count']} lines read")
+    return e
+
+
+class ImportConfirm(discord.ui.View):
+    def __init__(self, owner_id: int, label: str, prepared: dict):
+        super().__init__(timeout=900)
+        self.owner_id, self.label, self.p = owner_id, label, prepared
+        self.done = False
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id == self.owner_id:
+            return True
+        await interaction.response.send_message("Only the person who started this import can save it.", ephemeral=True)
+        return False
+
+    @discord.ui.button(label="Save", emoji="✅", style=discord.ButtonStyle.success)
+    async def save(self, interaction: discord.Interaction, _):
+        if self.done:
+            return
+        self.done = True
+        renamed = []
+        for old, new in self.p["renames"]:
+            if store.rename_member(old, new):
+                renamed.append(new)
+        names = dict(self.p["renames"])
+        totals = {names.get(k, k): v for k, v in self.p["matched"].items()}
+        totals.update(self.p["unknown_totals"])
+        cid, unknown = store.import_check(self.label, totals, str(interaction.user))
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(
+            embed=simple(f"Saved **{self.label}**." + (f" Updated {len(renamed)} renamed Roblox account(s)." if renamed
+                         else ""), GREEN, "✅ Coin Check Saved"), view=self)
+        board = coin_board(cid, unknown)
+        board.header += f" · Imported {len(totals)}"
+        await send_board(interaction, board)           # posted in this channel for everyone
+        await post_board_to_staff(board, skip_channel_id=interaction.channel_id)
+
+    @discord.ui.button(label="Cancel", emoji="❌", style=discord.ButtonStyle.danger)
+    async def cancel(self, interaction: discord.Interaction, _):
+        self.done = True
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(embed=simple("Nothing was saved.", AMBER, "❌ Import Cancelled"),
+                                                view=self)
+
+
+async def show_preview(interaction: discord.Interaction, text: str, label: str | None):
+    label = (label or "").strip() or dt.date.today().strftime("%d %b %Y")
+    prepared = await prepare_import(text)
+    if prepared is None:
+        await interaction.followup.send(embed=simple(
+            "I couldn't find any lines like `username 875128` in that. Put one person per line: their Roblox "
+            "username, then their Contribution number.", RED), ephemeral=True)
         return
-    label = label or dt.date.today().strftime("%d %b %Y")
-    cid, unknown = store.import_check(label, totals, str(interaction.user))
-    board = coin_board(cid, unknown)
-    board.header += f" · Imported {len(totals)}"
-    await send_board(interaction, board)
-    await post_board_to_staff(board, skip_channel_id=interaction.channel_id)
+    await interaction.followup.send(embed=preview_embed(label, prepared),
+                                    view=ImportConfirm(interaction.user.id, label, prepared), ephemeral=True)
+
+
+class ImportModal(discord.ui.Modal, title="Import Coin Check"):
+    label_input = discord.ui.TextInput(label="Name for this check", placeholder="e.g. Nov 2026", required=False,
+                                       max_length=40)
+    totals_input = discord.ui.TextInput(label="Paste totals: one per line", style=discord.TextStyle.paragraph,
+                                        placeholder="pramishp4 875128\n2pfaltac 365000\n…", max_length=4000)
+
+    def __init__(self, label: str | None):
+        super().__init__()
+        if label:
+            self.label_input.default = label
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await show_preview(interaction, self.totals_input.value, self.label_input.value)
+
+
+@coins_group.command(name="import", description="Import this month's totals: paste them, or attach a file")
+@app_commands.describe(file="Optional .csv/.txt with one 'username total' per line. Leave empty to paste instead",
+                       label="Name for this check, e.g. 'Nov 2026'")
+async def coins_import(interaction: discord.Interaction, file: Optional[discord.Attachment] = None,
+                       label: Optional[str] = None):
+    if file is None:
+        await interaction.response.send_modal(ImportModal(label))
+        return
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    if file.size > 500_000:
+        await interaction.followup.send(embed=simple("That file is too big. It should be a small list.", RED),
+                                        ephemeral=True)
+        return
+    await show_preview(interaction, (await file.read()).decode("utf-8-sig", errors="replace"), label)
 
 
 @coins_group.command(name="results", description="Show the latest coin check results")

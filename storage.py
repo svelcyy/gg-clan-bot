@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -126,6 +127,18 @@ class Store:
         self.db.commit()
         return True
 
+    def rename_member(self, old: str, new: str) -> bool:
+        """Someone changed their Roblox username: keep their roster entry, Discord link and coin history."""
+        if old.lower() == new.lower():
+            cur = self.db.execute("UPDATE members SET roblox_username=? WHERE roblox_username=?", (new, old))
+        else:
+            if self.get_member(new):
+                return False
+            cur = self.db.execute("UPDATE members SET roblox_username=? WHERE roblox_username=?", (new, old))
+            self.db.execute("UPDATE OR REPLACE totals SET roblox_username=? WHERE roblox_username=?", (new, old))
+        self.db.commit()
+        return cur.rowcount > 0
+
     def remove_member(self, roblox_username: str) -> bool:
         cur = self.db.execute("DELETE FROM members WHERE roblox_username=?", (roblox_username.strip(),))
         self.db.commit()
@@ -193,12 +206,19 @@ class Store:
 
     # ------------------------------------------------------------- results --
     def results(self, check_id: int) -> list[Result]:
-        minimum = self.get_minimum()
-        now = self.totals(check_id)
         prev_id = self.previous_check_id(check_id)
-        before = self.totals(prev_id) if prev_id else {}
+        return self._compute(self.totals(check_id), self.totals(prev_id) if prev_id else {},
+                             self.check_created(check_id))
+
+    def preview(self, totals: dict[str, int]) -> list[Result]:
+        """What the results would be if these totals were imported now (nothing is saved)."""
+        latest = self.latest_check_id()
+        return self._compute({k.lower(): v for k, v in totals.items()},
+                             self.totals(latest) if latest else {}, _now())
+
+    def _compute(self, now: dict[str, int], before: dict[str, int], created: str) -> list[Result]:
+        minimum = self.get_minimum()
         out = []
-        created = self.check_created(check_id)
         for m in self.members():
             key = m.roblox_username.lower()
             total, previous = now.get(key), before.get(key)
@@ -276,16 +296,44 @@ class Store:
         return True
 
 
+LINE = re.compile(r"^\s*@?([A-Za-z0-9_]{3,20})\b[\s,;:|=>\-–—]*\"?([\d][\d,.\s]*)\"?\s*$")
+
+
 def parse_totals_csv(text: str) -> dict[str, int]:
-    """Accepts 'roblox_username,total' rows (header optional). Commas inside numbers are fine
-    if the number is quoted, e.g. pramishp4,"863,128"."""
+    """Read 'username total' lines in almost any layout:
+    pramishp4,875128 · pramishp4 875,128 · @pramishp4 - 875128 · pramishp4,"875,128" · tabs from a spreadsheet.
+    Header rows and blank lines are skipped. If a name appears twice, the last line wins."""
     out: dict[str, int] = {}
-    for row in csv.reader(io.StringIO(text.strip())):
-        if len(row) < 2:
+    for line in text.replace("\r", "").split("\n"):
+        m = LINE.match(line)
+        if not m:
             continue
-        name, raw = row[0].strip().lstrip("@"), "".join(row[1:]).strip()
-        digits = raw.replace(",", "").replace(" ", "")
-        if not name or not digits.isdigit():
-            continue  # header row or junk
-        out[name] = int(digits)
+        digits = re.sub(r"[^0-9]", "", m.group(2))
+        if digits:
+            out[m.group(1)] = int(digits)
     return out
+
+
+def match_totals(totals: dict[str, int], members: list["Member"], ids: dict[str, int]):
+    """Match imported names to the roster.
+
+    ids: imported name (lowercase) -> Roblox user id, for names that aren't on the roster.
+    Returns (matched {roster username: total}, renames [(old roster name, new name)], unknown [names]).
+    A renamed account is recognised by its Roblox user id, so their Discord link and history stay attached.
+    """
+    by_name = {m.roblox_username.lower(): m for m in members}
+    by_id = {m.roblox_id: m for m in members if m.roblox_id}
+    matched: dict[str, int] = {}
+    renames: list[tuple[str, str]] = []
+    unknown: list[str] = []
+    for name, total in totals.items():
+        m = by_name.get(name.lower())
+        if m is None and ids.get(name.lower()) in by_id:
+            m = by_id[ids[name.lower()]]
+            if m.roblox_username.lower() != name.lower():
+                renames.append((m.roblox_username, name))
+        if m is None:
+            unknown.append(name)
+        else:
+            matched[m.roblox_username] = total
+    return matched, renames, unknown
