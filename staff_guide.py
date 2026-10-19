@@ -43,7 +43,7 @@ PAGES: list[tuple[str, str, str, str]] = [   # (key, emoji, title, body)
      "• Removes **gg Member** and their rank role in Discord.\n"
      "• Drops them to the basic role in the Roblox group.\n"
      "• Posts a **Left the Clan** card in the roster log.\n\n"
-     "You can't remove yourself or other staff. Those go through the Clan Manager.\n\n"
+     "You can't remove yourself, or anyone your rank or higher. Those go through the Clan Manager.\n\n"
      "Set **keep_roles** to True to only take them off the roster. Their coin history is kept either way, "
      "so re-adding them later is safe."),
     ("lookup", "🔎", "Looking Things Up",

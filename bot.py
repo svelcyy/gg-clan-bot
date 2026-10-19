@@ -611,10 +611,13 @@ async def roster_remove(interaction: discord.Interaction, roblox: str, keep_role
                 "🔒 You can't remove yourself from the roster. If you're leaving or resigning, "
                 "let the Clan Manager know and they'll take care of it.", RED), ephemeral=True)
             return
-        if m.rank != "Member" or m.exempt:
+        level = {"Member": 0, "Officer": 1, "Admin": 2, "Leader": 3}
+        me = store.member_by_discord(interaction.user.id)
+        my_level = level.get(me.rank, 0) if me else 0
+        if level.get(m.rank, 0) >= max(my_level, 1):   # only someone ranked above them can remove them
             await interaction.response.send_message(embed=simple(
-                f"🔒 **{m.roblox_username}** is staff ({m.rank}). Only the Clan Manager can remove staff "
-                "from the roster.", RED), ephemeral=True)
+                f"🔒 **{m.roblox_username}** is {m.rank}, the same rank as you or higher. "
+                "Only someone ranked above them (or the Clan Manager) can remove them.", RED), ephemeral=True)
             return
     await interaction.response.defer(ephemeral=not public)  # only the person who ran it sees the reply
     store.remove_member(roblox)
