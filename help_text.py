@@ -157,10 +157,10 @@ def overview() -> str:
     lines = ["-# Pick a command from the menu below to see how to use it. 🔒 = staff only · 👑 = Clan Manager only",
              "-# Replies that only you see have a **public** option to show them to everyone.", ""]
     for cat in CATEGORY_EMOJI:
-        lines.append(f"**{CATEGORY_EMOJI[cat]} {cat}**")
-        for c in (c for c in COMMANDS if c.category == cat):
+        lines.append(f"### {CATEGORY_EMOJI[cat]} {cat}")
+        for c in (c for c in COMMANDS if c.category == cat and c.name != "/help"):
             mark = " 👑" if c.name in ADMIN_ONLY else " 🔒" if c.staff else ""
-            lines.append(f"`{c.name}`{mark} · {c.short}")
+            lines.append(f"`{c.name}`{mark}\n-# {c.short}")
         lines.append("")
     return "\n".join(lines).strip()
 

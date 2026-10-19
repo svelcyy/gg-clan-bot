@@ -1,14 +1,10 @@
-"""[gg] Clan bot v2 — the bot itself. Started by main.py (which updates the code first).
+"""[gg] Clan bot: the bot itself. Started by main.py (which updates the code first).
 
-Staff commands (need the Manage Roles permission):
-  /roster add | remove | link | exempt | rank | note | list
-  /coins import | results | set | status | minimum | undo
-  /check
-  /update
-Everyone:
-  /userinfo
+Everyone:        /userinfo /leaderboard /claninfo /botinfo /help
+Staff:           /roster add | remove | link | note | list, /coins results | status, /check, /staffguide
+Clan Manager:    /roster rank | exempt | start | reset, /coins import | set | undo | minimum,
+                 /update /restart /reminders
 
-Results are shown as embeds with ◀ ▶ page buttons and a menu to jump between sections.
 The bot keeps its own data in clan.db. Settings come from environment variables / .env.
 """
 from __future__ import annotations
@@ -33,7 +29,7 @@ import staff_guide
 import reports
 import roblox as rbx
 import updater
-from reports import AMBER, GREEN, PURPLE, RED, Board
+from reports import AMBER, BLURPLE, GREEN, PURPLE, RED, Board, esc
 from storage import RANKS, Store, match_totals, parse_totals_csv
 
 load_dotenv()
@@ -174,7 +170,9 @@ def csv_file(text: str, name: str) -> discord.File:
 
 
 def board_embed(board: Board, list_index: int = 0, page: int = 0) -> discord.Embed:
-    return discord.Embed(title=board.title, description=board.render(list_index, page)[:4096], color=board.color)
+    e = discord.Embed(title=board.title, description=board.render(list_index, page)[:4096], color=board.color)
+    e.set_footer(text=board.footer(list_index, page))
+    return e
 
 
 class ListMenu(discord.ui.Select):
@@ -381,6 +379,10 @@ async def sync_roles(guild: discord.Guild, discord_id: int | None, rank: str | N
     return "\n".join(parts)
 
 
+def handle(user: discord.abc.User) -> str:
+    return f"@{esc(user.name)}"
+
+
 def update_embed(title: str, description: str = "", color: int = GREEN, fields: list[tuple[str, str, bool]] = (),
                  discord_roles: str | None = None, group: str = "", footer: str = "", notes: list[str] = ()) -> discord.Embed:
     """A tidy confirmation card: labelled fields, then role changes, then any notes."""
@@ -525,8 +527,8 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
             found = await rbx.lookup_usernames(s, [name])
         if name.lower() not in found:
             await interaction.followup.send(embed=simple(
-                f"There's no Roblox account called **{name}**. Check the spelling, and use the @ username, "
-                "not the display name.", RED, "❌ Not added"))
+                f"There's no Roblox account called **{esc(name)}**. Check the spelling, and use the @ username, "
+                "not the display name.", RED, "❌ Not Added"), ephemeral=not public)
             return
         rid, name = found[name.lower()]
     except Exception:
@@ -536,8 +538,7 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
     rank_name = rank.value if rank else "Member"
     coins_given = coins is not None
     returning = store.last_known(name, rid)          # were they on the roster before?
-    restored_coins = False   # leaving the clan in game wipes Contribution, so returning members start from 0
-    if not coins_given:
+    if not coins_given:   # leaving the clan in game wipes Contribution, so everyone starts from 0
         coins = 0                                    # no number given: start from 0
     if discord_user is None and returning and returning["discord_id"]:
         try:
@@ -545,22 +546,21 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
         except discord.HTTPException:
             pass
     if not store.add_member(name, rid, discord_user.id if discord_user else None, rank_name, exempt, notes, coins):
-        await interaction.followup.send(embed=simple(f"**{name}** is already on the roster.", AMBER))
+        await interaction.followup.send(embed=simple(f"**{esc(name)}** is already on the roster.", AMBER),
+                                        ephemeral=not public)
         return
     roles = await sync_roles(interaction.guild, discord_user.id if discord_user else None, rank_name)
     group = await sync_group(name, rid, rank_name)
-    desc = ("Their next coin check will measure from their starting coins." if coins_given else
-            "Welcome back! Their Discord link was restored. Their coins start from **0**, since leaving the clan "
-            "in game resets Contribution." if returning and returning["discord_id"] else
-            "No coins given, so they start from **0**. The Clan Manager can change it with `/roster start`.")
+    restored = returning and returning["discord_id"] and discord_user and discord_user.id == returning["discord_id"]
+    desc = ("Welcome back! Their Discord link was restored." if restored else "")
     info = [("Rank", rank_name + (" · 🛡️ Exempt" if exempt else ""), True),
-            ("Discord", discord_user.mention if discord_user else "Not linked", True),
-            ("Starting Coins", f"{coins:,}" + ("" if coins_given else " (last known)" if restored_coins else " (default)"), True)]
-    footer = f"Roster: {len(store.members())}/100"
+            ("Discord", handle(discord_user) if discord_user else "Not linked", True),
+            ("Starting Coins", f"{coins:,}", True)]
+    footer = f"{len(store.members())} members on the roster"
     await interaction.followup.send(embed=update_embed(
         f"✅ Added {name}", desc, fields=info, discord_roles=roles, group=group, notes=notes_out, footer=footer),
         ephemeral=not public)
-    alert = update_embed(f"🆕 New Clan Member: {name}", f"Added by {interaction.user.mention}.", fields=info,
+    alert = update_embed(f"🆕 New Clan Member: {name}", f"Added by {handle(interaction.user)}", fields=info,
                          footer=footer)
     alert.timestamp = discord.utils.utcnow()
     await post_alert(alert, skip_channel_id=None)
@@ -573,8 +573,8 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
 async def roster_start(interaction: discord.Interaction, roblox: str, coins: app_commands.Range[int, 0]):
     ok = store.update_member(roblox, start_total=coins)
     await interaction.response.send_message(embed=simple(
-        f"**{roblox}**'s starting coins are now **{coins:,}**." if ok else f"**{roblox}** isn't on the roster.",
-        GREEN if ok else AMBER))
+        f"**{esc(roblox)}** now starts from **{coins:,}** coins." if ok else f"**{esc(roblox)}** isn't on the roster.",
+        GREEN if ok else AMBER, "🏁 Starting Coins Updated" if ok else None), ephemeral=True)
 
 
 @roster_group.command(name="reset", description="Delete the whole roster and every coin check (admins only)")
@@ -603,8 +603,8 @@ async def roster_reset(interaction: discord.Interaction, confirm: str):
 async def roster_remove(interaction: discord.Interaction, roblox: str, keep_roles: bool = False, public: bool = False):
     m = store.get_member(roblox)
     if not m:
-        await interaction.response.send_message(embed=simple(f"**{roblox}** isn't on the roster.", AMBER),
-                                                ephemeral=not public)
+        await interaction.response.send_message(embed=simple(f"**{esc(roblox)}** isn't on the roster.", AMBER),
+                                                ephemeral=True)
         return
     perms = getattr(interaction.user, "guild_permissions", None)
     if not (perms and perms.administrator):
@@ -618,7 +618,7 @@ async def roster_remove(interaction: discord.Interaction, roblox: str, keep_role
         my_level = level.get(me.rank, 0) if me else 0
         if level.get(m.rank, 0) >= max(my_level, 1):   # only someone ranked above them can remove them
             await interaction.response.send_message(embed=simple(
-                f"🔒 **{m.roblox_username}** is {m.rank}, the same rank as you or higher. "
+                f"🔒 **{esc(m.roblox_username)}** is {m.rank}, the same rank as you or higher. "
                 "Only someone ranked above them (or the Clan Manager) can remove them.", RED), ephemeral=True)
             return
     await interaction.response.defer(ephemeral=not public)  # only the person who ran it sees the reply
@@ -630,11 +630,11 @@ async def roster_remove(interaction: discord.Interaction, roblox: str, keep_role
         roles = (f"Kept, because that account is still on the roster as {', '.join(others)}." if others
                  else await sync_roles(interaction.guild, m.discord_id, None))
         group = await sync_group(m.roblox_username, m.roblox_id, None)
-    footer = f"Roster: {len(store.members())}/100"
+    footer = f"{len(store.members())} members on the roster"
     await interaction.followup.send(embed=update_embed(
-        f"🗑️ Removed {m.roblox_username}", "Their coin history is kept.", discord_roles=roles, group=group,
+        f"🗑️ Removed {m.roblox_username}", color=RED, discord_roles=roles, group=group,
         footer=footer), ephemeral=not public)
-    alert = update_embed(f"👋 Left the Clan: {m.roblox_username}", f"Removed by {interaction.user.mention}.",
+    alert = update_embed(f"👋 Left the Clan: {m.roblox_username}", f"Removed by {handle(interaction.user)}",
                          color=RED, fields=[("Rank", m.rank, True),
                                             ("Discord", reports.dname(m.discord_id) or "Not linked", True)],
                          footer=footer)
@@ -647,17 +647,17 @@ async def roster_remove(interaction: discord.Interaction, roblox: str, keep_role
 async def roster_link(interaction: discord.Interaction, roblox: str, discord_user: discord.User):
     if not store.get_member(roblox):
         await interaction.response.send_message(embed=simple(
-            f"**{roblox}** isn't on the roster. Add them with `/roster add`.", AMBER))
+            f"**{esc(roblox)}** isn't on the roster. Add them with `/roster add`.", AMBER), ephemeral=True)
         return
-    await interaction.response.defer()
+    await interaction.response.defer(ephemeral=True)
     others = [o for o in store.discord_id_owner(discord_user.id) if o.lower() != roblox.lower()]
     store.update_member(roblox, discord_id=discord_user.id)
     m = store.get_member(roblox)
     roles = await sync_roles(interaction.guild, discord_user.id, m.rank)
     await interaction.followup.send(embed=update_embed(
-        f"🔗 Linked {m.roblox_username}", f"Now linked to {discord_user.mention}.",
+        f"🔗 Linked {m.roblox_username}", f"Now linked to **{handle(discord_user)}**.",
         fields=[("Rank", m.rank, True)], discord_roles=roles,
-        notes=[f"That Discord account is also linked to {', '.join(others)}."] if others else []))
+        notes=[f"That Discord account is also linked to {', '.join(others)}."] if others else []), ephemeral=True)
 
 
 @roster_group.command(name="exempt", description="Turn coin-check exemption on or off")
@@ -665,10 +665,11 @@ async def roster_link(interaction: discord.Interaction, roblox: str, discord_use
 @app_commands.autocomplete(roblox=roster_autocomplete)
 async def roster_exempt(interaction: discord.Interaction, roblox: str, exempt: bool):
     ok = store.update_member(roblox, exempt=exempt)
-    text = (f"🛡️ **{roblox}** is now exempt from coin checks." if exempt
-            else f"**{roblox}** is no longer exempt from coin checks.") \
-        if ok else f"**{roblox}** isn't on the roster."
-    await interaction.response.send_message(embed=simple(text, PURPLE if ok and exempt else GREEN if ok else AMBER))
+    text = (f"🛡️ **{esc(roblox)}** is now exempt from coin checks." if exempt
+            else f"**{esc(roblox)}** is no longer exempt from coin checks.") \
+        if ok else f"**{esc(roblox)}** isn't on the roster."
+    await interaction.response.send_message(embed=simple(text, PURPLE if ok and exempt else GREEN if ok else AMBER),
+                                            ephemeral=True)
 
 
 @app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
@@ -679,8 +680,8 @@ async def roster_exempt(interaction: discord.Interaction, roblox: str, exempt: b
 async def roster_rank(interaction: discord.Interaction, roblox: str, rank: app_commands.Choice[str], public: bool = False):
     before = store.get_member(roblox)
     if not before or not store.update_member(roblox, rank=rank.value):
-        await interaction.response.send_message(embed=simple(f"**{roblox}** isn't on the roster.", AMBER),
-                                                ephemeral=not public)
+        await interaction.response.send_message(embed=simple(f"**{esc(roblox)}** isn't on the roster.", AMBER),
+                                                ephemeral=True)
         return
     await interaction.response.defer(ephemeral=not public)  # only the person who ran it sees the reply
     m = store.get_member(roblox)
@@ -692,7 +693,7 @@ async def roster_rank(interaction: discord.Interaction, roblox: str, rank: app_c
         old_i = RANKS.index(before.rank) if before.rank in RANKS else len(RANKS)
         promoted = RANKS.index(rank.value) < old_i   # RANKS goes Leader, Admin, Officer, Member
         alert = update_embed(f"{'⬆️ Promoted' if promoted else '⬇️ Demoted'}: {m.roblox_username}",
-                             f"Changed by {interaction.user.mention}.", color=GREEN if promoted else AMBER,
+                             f"Changed by {handle(interaction.user)}", color=GREEN if promoted else AMBER,
                              fields=[("Rank", f"{before.rank} → **{rank.value}**", True),
                                      ("Discord", reports.dname(m.discord_id) or "Not linked", True)])
         alert.timestamp = discord.utils.utcnow()
@@ -703,8 +704,9 @@ async def roster_rank(interaction: discord.Interaction, roblox: str, rank: app_c
 @app_commands.autocomplete(roblox=roster_autocomplete)
 async def roster_note(interaction: discord.Interaction, roblox: str, note: str = ""):
     ok = store.update_member(roblox, notes=note)
-    await interaction.response.send_message(embed=simple(
-        "📝 Note saved." if ok else f"**{roblox}** isn't on the roster.", GREEN if ok else AMBER))
+    text = ((f"📝 Note saved for **{esc(roblox)}**." if note else f"📝 Note cleared for **{esc(roblox)}**.") if ok
+            else f"**{esc(roblox)}** isn't on the roster.")
+    await interaction.response.send_message(embed=simple(text, GREEN if ok else AMBER), ephemeral=True)
 
 
 @roster_group.command(name="list", description="Browse the roster (and download it as a spreadsheet file)")
@@ -768,7 +770,7 @@ def preview_embed(label: str, p: dict) -> discord.Embed:
     passed = sum(r.status == "Pass" for r in results)
     failed = sum(r.status == "Fail" for r in results)
     new = sum(r.status == "Baseline" for r in results)
-    e = discord.Embed(title=f"🪙 Coin Check Preview — {label}", color=reports.AMBER,
+    e = discord.Embed(title=f"🪙 Coin Check Preview · {label}", color=reports.AMBER,
                       description="Nothing is saved until you click **Save**.")
     e.add_field(name="Matched", value=f"{len(p['matched'])} of {len(store.members())} on the roster", inline=True)
     e.add_field(name="Would Pass", value=str(passed), inline=True)
@@ -848,7 +850,7 @@ class ImportConfirm(discord.ui.View):
                 f"Set starting coins for **{len(totals)}** members." +
                 (f" Updated {len(renamed)} renamed Roblox account(s)." if renamed else "") +
                 " The next coin check measures from these numbers.", GREEN, "✅ Starting Coins Saved"), view=self)
-            await post_alert(simple(f"{interaction.user.mention} set starting coins for {len(totals)} members.",
+            await post_alert(simple(f"{handle(interaction.user)} set starting coins for {len(totals)} members.",
                                     BLURPLE, "🏁 Starting Coins Updated"))
             return
         totals.update(self.p["unknown_totals"])
@@ -860,7 +862,6 @@ class ImportConfirm(discord.ui.View):
                          else ""), GREEN, "✅ Coin Check Saved"), view=self)
         await load_names()
         board = coin_board(cid, unknown)
-        board.header += f" · Imported {len(totals)}"
         await send_board(interaction, board)           # posted in this channel for everyone
         await post_board_to_staff(board, skip_channel_id=interaction.channel_id)
 
@@ -929,7 +930,7 @@ async def coins_import(interaction: discord.Interaction, file: Optional[discord.
 async def coins_results(interaction: discord.Interaction):
     cid = store.latest_check_id()
     if not cid:
-        await interaction.response.send_message(embed=simple("No coin checks yet. Use `/coins import`.", AMBER))
+        await interaction.response.send_message(embed=simple("No coin checks yet.", AMBER), ephemeral=True)
         return
     await interaction.response.defer()
     await load_names()
@@ -942,7 +943,7 @@ async def coins_results(interaction: discord.Interaction):
 async def coins_set(interaction: discord.Interaction, roblox: str, total: app_commands.Range[int, 0]):
     cid = store.latest_check_id()
     if not cid:
-        await interaction.response.send_message(embed=simple("No coin checks yet. Use `/coins import`.", AMBER))
+        await interaction.response.send_message(embed=simple("No coin checks yet.", AMBER), ephemeral=True)
         return
     store.set_total(cid, roblox, total)
     r = next((r for r in store.results(cid) if r.member.roblox_username.lower() == roblox.lower()), None)
@@ -952,7 +953,7 @@ async def coins_set(interaction: discord.Interaction, roblox: str, total: app_co
     else:
         extra, color = "They're not on the roster, so it won't count until they're added.", AMBER
     await interaction.response.send_message(embed=simple(
-        f"✏️ **{roblox}**: total set to {total:,} for {store.check_label(cid)}.\n{extra}", color))
+        f"✏️ **{esc(roblox)}**: total set to {total:,} for {store.check_label(cid)}.\n{extra}", color), ephemeral=True)
 
 
 @coins_group.command(name="status", description="See one member's coin history")
@@ -960,12 +961,11 @@ async def coins_set(interaction: discord.Interaction, roblox: str, total: app_co
 async def coins_status(interaction: discord.Interaction, roblox: str):
     m = store.get_member(roblox)
     if not m:
-        await interaction.response.send_message(embed=simple(f"**{roblox}** isn't on the roster.", AMBER))
+        await interaction.response.send_message(embed=simple(f"**{esc(roblox)}** isn't on the roster.", AMBER),
+                                                ephemeral=True)
         return
     title, desc, color = reports.member_status(m, store.history(m.roblox_username), store.get_minimum())
-    e = simple(desc, color, title)
-    e.set_footer(text=f"[gg] bot v{RUNNING_VERSION}")
-    await interaction.response.send_message(embed=e)
+    await interaction.response.send_message(embed=simple(desc, color, title), ephemeral=True)
 
 
 @coins_group.command(name="minimum", description="Change the monthly minimum (default 10,000)")
@@ -973,7 +973,7 @@ async def coins_status(interaction: discord.Interaction, roblox: str):
 async def coins_minimum(interaction: discord.Interaction, amount: app_commands.Range[int, 0]):
     store.set_minimum(amount)
     await interaction.response.send_message(embed=simple(
-        f"Monthly minimum is now **{amount:,}**. Results use it straight away."))
+        f"Monthly minimum is now **{amount:,}** coins. Results use it straight away."), ephemeral=True)
 
 
 @coins_group.command(name="undo", description="Delete the most recent coin check import")
@@ -982,15 +982,16 @@ async def coins_minimum(interaction: discord.Interaction, amount: app_commands.R
 async def coins_undo(interaction: discord.Interaction, confirm: str):
     cid = store.latest_check_id()
     if not cid:
-        await interaction.response.send_message(embed=simple("There are no coin checks to undo.", AMBER))
+        await interaction.response.send_message(embed=simple("There are no coin checks to undo.", AMBER),
+                                                ephemeral=True)
         return
     label = store.check_label(cid)
     if confirm.strip() != label:
         await interaction.response.send_message(embed=simple(
-            f"Nothing deleted. To delete the latest check, type its name exactly: `{label}`", AMBER))
+            f"Nothing deleted. To delete the latest check, type its name exactly: `{label}`", AMBER), ephemeral=True)
         return
     store.delete_check(cid)
-    await interaction.response.send_message(embed=simple(f"🗑️ Deleted the coin check **{label}**."))
+    await interaction.response.send_message(embed=simple(f"🗑️ Deleted the coin check **{label}**."), ephemeral=True)
 
 
 # =================================================================== /help ===
@@ -1164,8 +1165,9 @@ async def leaderboard(interaction: discord.Interaction, public: bool = True):
 @bot.tree.command(name="botinfo", description="Bot stats: uptime, ping, version and latest changes")
 @app_commands.guild_only()
 async def botinfo(interaction: discord.Interaction, public: bool = False):
-    ping = round(bot.latency * 1000)
-    ping_dot = "🟢" if ping < 150 else "🟡" if ping < 400 else "🔴"
+    lat = bot.latency
+    ping = round(lat * 1000) if lat == lat and lat != float("inf") else None   # NaN right after startup
+    ping_dot = "⚪" if ping is None else "🟢" if ping < 150 else "🟡" if ping < 400 else "🔴"
     members = store.members()
     latest = store.latest_check_id()
     e = discord.Embed(title="🤖 [gg] Bot", color=reports.BLURPLE,
@@ -1173,8 +1175,8 @@ async def botinfo(interaction: discord.Interaction, public: bool = False):
     e.add_field(name="Version", value=f"v{RUNNING_VERSION}", inline=True)
     e.add_field(name="Uptime", value=nice_duration((dt.datetime.now(dt.timezone.utc) - STARTED_AT).total_seconds()),
                 inline=True)
-    e.add_field(name="Ping", value=f"{ping_dot} {ping} ms", inline=True)
-    e.add_field(name="Roster", value=f"{len(members)}/100 members", inline=True)
+    e.add_field(name="Ping", value=f"{ping_dot} {ping} ms" if ping is not None else "⚪ Measuring…", inline=True)
+    e.add_field(name="Roster", value=f"{len(members)} members", inline=True)
     e.add_field(name="Last Coin Check", value=store.check_label(latest) if latest else "None yet", inline=True)
     e.add_field(name="Memory", value=memory_mb(), inline=True)
     news = changes_since("0", RUNNING_VERSION)[:3]
@@ -1182,7 +1184,7 @@ async def botinfo(interaction: discord.Interaction, public: bool = False):
         e.add_field(name="Latest Changes", value="\n".join(f"**v{v}** · {t}" for v, t in news)[:1024], inline=False)
     if bot.user and bot.user.display_avatar:
         e.set_thumbnail(url=bot.user.display_avatar.url)
-    e.set_footer(text=f"discord.py {discord.__version__} · Python {sys.version.split()[0]}")
+    e.set_footer(text=f"[gg] bot v{RUNNING_VERSION}")
     await interaction.response.send_message(embed=e, ephemeral=not public)
 
 
@@ -1255,8 +1257,8 @@ def userinfo_embed(member: discord.Member, full: discord.User | None, current: i
     else:
         minimum = store.get_minimum()
         history = store.history(m.roblox_username)
-        link = (f"[{m.roblox_username}](https://www.roblox.com/users/{m.roblox_id}/profile)" if m.roblox_id
-                else m.roblox_username)
+        link = (f"[{esc(m.roblox_username)}](https://www.roblox.com/users/{m.roblox_id}/profile)" if m.roblox_id
+                else esc(m.roblox_username))
         clan = [f"▸ Roblox: {link}",
                 f"▸ Rank: {m.rank}" + (" · 🛡️ Exempt from coin checks" if m.exempt else "")]
         if history:
@@ -1273,10 +1275,6 @@ def userinfo_embed(member: discord.Member, full: discord.User | None, current: i
             so_far = current - last if current >= last else current   # lower = Contribution was reset
             need = max(0, minimum - so_far)
             clan.append(f"▸ This Month So Far: +{so_far:,} · " + ("✅ Minimum reached!" if need == 0 else f"{need:,} to go"))
-        try:
-            clan.append(f"▸ On the Roster Since: {when(dt.datetime.fromisoformat(m.added_at))}")
-        except (TypeError, ValueError):
-            pass
         e.add_field(name="🏰 [gg] Clan", value="\n".join(clan), inline=False)
 
     if full and full.banner:
@@ -1292,10 +1290,10 @@ def userinfo_embed(member: discord.Member, full: discord.User | None, current: i
 @app_commands.guild_only()
 async def userinfo(interaction: discord.Interaction, user: Optional[discord.Member] = None,
                    current: Optional[app_commands.Range[int, 0]] = None, public: bool = False):
+    await interaction.response.defer(ephemeral=not public)
     member = user or interaction.user
     if not isinstance(member, discord.Member):
         member = interaction.guild.get_member(member.id) or await interaction.guild.fetch_member(member.id)
-    await interaction.response.defer(ephemeral=not public)
     try:
         full = await bot.fetch_user(member.id)   # the banner only comes with a full fetch
     except discord.HTTPException:
@@ -1418,7 +1416,7 @@ async def weekly_report():
         return
     await load_names()
     board = await build_check(guild, "all")
-    board.title = "📋 Weekly — " + board.title
+    board.title = "📋 Weekly Roster Check"
     await post_board_to_staff(board)
 
 
@@ -1509,6 +1507,7 @@ async def _wait_ready_reminders():
 @app_commands.default_permissions(administrator=True)
 @app_commands.guild_only()
 async def reminders(interaction: discord.Interaction, public: bool = False):
+    await interaction.response.defer(ephemeral=not public)
     tz = reminder_tz()
     now = dt.datetime.now(tz)
     nxt = now.replace(day=COIN_REMINDER_DAY, hour=REMINDER_HOUR, minute=0, second=0, microsecond=0)
@@ -1527,7 +1526,7 @@ async def reminders(interaction: discord.Interaction, public: bool = False):
                                              description="Reminders will show up here like this.")) \
         if REMINDER_CHANNEL_ID else False
     e.set_footer(text="✅ Test ping sent" if sent else "Couldn't send a test (check the channel setting)")
-    await interaction.response.send_message(embed=e, ephemeral=not public)
+    await interaction.followup.send(embed=e, ephemeral=not public)
 
 
 def run():

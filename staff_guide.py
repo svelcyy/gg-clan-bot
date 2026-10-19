@@ -6,7 +6,7 @@ PAGES: list[tuple[str, str, str, str]] = [   # (key, emoji, title, body)
      "Staff use the bot to add, update and remove clan members. It keeps Discord roles and the Roblox group "
      "in step with the roster. Coin checks are run by the Clan Manager.\n\n"
      "• **Who can use staff commands:** anyone with the **Manage Roles** permission.\n"
-     "• **Add, rank and remove replies are private** by default. Set **public** to True to show the channel.\n"
+     "• **Replies are private** by default. On add and remove, set **public** to True to show the channel.\n"
      "• **The bot never pings anyone.** Names in replies and log cards are plain text.\n"
      "• **Roster changes are logged** in the roster log channel, so other staff can see what changed.\n"
      "• **Picking a member:** start typing their Roblox username in **roblox** and pick them from the list. "

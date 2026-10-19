@@ -1,4 +1,5 @@
 # Newest first. Format: version | what changed
+2.17.0 | Cleaner, roomier panels everywhere; fixed starting-coins save error, startup ping error and name formatting
 2.16.0 | /mystatus is now /userinfo: full Discord profile plus a clan section for members
 2.15.5 | /roster remove follows rank: you can only remove people ranked below you
 2.15.4 | Re-added members start from 0 again (leaving resets Contribution); a dropped total counts from 0 instead of failing
