@@ -1,4 +1,5 @@
 # Newest first. Format: version | what changed
+2.15.2 | Staff can't remove themselves or other staff from the roster
 2.15.1 | Only the Clan Manager can use /roster add with a staff rank or exempt
 2.15.0 | Rank changes, exemptions, starting coins, coin checks and bot controls are now Clan Manager (Administrator) only
 2.14.0 | New /staffguide for staff, right inside Discord

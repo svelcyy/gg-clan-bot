@@ -594,6 +594,18 @@ async def roster_remove(interaction: discord.Interaction, roblox: str, keep_role
         await interaction.response.send_message(embed=simple(f"**{roblox}** isn't on the roster.", AMBER),
                                                 ephemeral=not public)
         return
+    perms = getattr(interaction.user, "guild_permissions", None)
+    if not (perms and perms.administrator):
+        if m.discord_id == interaction.user.id:
+            await interaction.response.send_message(embed=simple(
+                "🔒 You can't remove yourself from the roster. If you're leaving or resigning, "
+                "let the Clan Manager know and they'll take care of it.", RED), ephemeral=True)
+            return
+        if m.rank != "Member" or m.exempt:
+            await interaction.response.send_message(embed=simple(
+                f"🔒 **{m.roblox_username}** is staff ({m.rank}). Only the Clan Manager can remove staff "
+                "from the roster.", RED), ephemeral=True)
+            return
     await interaction.response.defer(ephemeral=not public)  # only the person who ran it sees the reply
     store.remove_member(roblox)
     others = [o for o in store.discord_id_owner(m.discord_id)] if m.discord_id else []
