@@ -117,6 +117,11 @@ COMMANDS: list[HelpEntry] = [
               "Compare the roster with Discord roles and the Roblox group",
               "/check  ·  /check what:Roblox group only",
               "Lists who needs **gg Member** or a Roblox clan role, and who has one but isn't on the roster."),
+    HelpEntry("/reminders", "Bot", True,
+              "See when the reminders go off and send a test ping",
+              "/reminders",
+              "On the 1st of every month the bot pings you to do the coin check. "
+              "It can also warn you before the host needs a restart (if RESTART_REMINDER_DAYS is set)."),
     HelpEntry("/update", "Bot", True,
               "Download the newest bot version and restart",
               "/update",
