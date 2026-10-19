@@ -178,7 +178,7 @@ class ListMenu(discord.ui.Select):
 
 
 class BoardView(discord.ui.View):
-    """Only the person who ran the command (or staff) can flip pages."""
+    """The person who ran the command (or staff) flips the shared pages; anyone else gets a private copy."""
 
     def __init__(self, board: Board, owner_id: int | None = None, timeout: float = 900):
         super().__init__(timeout=timeout)
@@ -212,7 +212,11 @@ class BoardView(discord.ui.View):
         perms = getattr(interaction.user, "guild_permissions", None)
         if self.owner_id in (None, interaction.user.id) or (perms and perms.manage_roles):
             return True
-        await interaction.response.send_message("Run the command yourself to browse this list.", ephemeral=True)
+        # Someone else clicked a shared board: give them their own private copy to browse.
+        copy = BoardView(self.board, owner_id=interaction.user.id)
+        copy.list_index, copy.page = self.list_index, self.page
+        copy._sync()
+        await interaction.response.send_message(embed=copy.embed(), view=copy, ephemeral=True)
         return False
 
     async def on_timeout(self):
@@ -467,11 +471,12 @@ roster_group = app_commands.Group(name="roster", description="Manage the clan ro
 @app_commands.describe(roblox="Their Roblox username (the @ name)", discord_user="Their Discord account",
                        coins="Their Contribution number in game right now (their starting point). Leave empty for 0",
                        rank="Clan rank (default Member)", exempt="Skip them in coin checks?", notes="Optional note")
+@app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
 @app_commands.choices(rank=RANK_CHOICES)
 async def roster_add(interaction: discord.Interaction, roblox: str, discord_user: Optional[discord.User] = None,
                      coins: Optional[app_commands.Range[int, 0]] = None,
-                     rank: Optional[app_commands.Choice[str]] = None, exempt: bool = False, notes: str = ""):
-    await interaction.response.defer(ephemeral=True)  # only the person who ran it sees the reply
+                     rank: Optional[app_commands.Choice[str]] = None, exempt: bool = False, notes: str = "", public: bool = False):
+    await interaction.response.defer(ephemeral=not public)  # only the person who ran it sees the reply
     name, rid, notes_out = roblox.strip().lstrip("@"), None, []
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as s:
@@ -502,7 +507,7 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
     footer = f"Roster: {len(store.members())}/100"
     await interaction.followup.send(embed=update_embed(
         f"✅ Added {name}", desc, fields=info, discord_roles=roles, group=group, notes=notes_out, footer=footer),
-        ephemeral=True)
+        ephemeral=not public)
     alert = update_embed(f"🆕 New Clan Member: {name}", f"Added by {interaction.user.mention}.", fields=info,
                          footer=footer)
     alert.timestamp = discord.utils.utcnow()
@@ -538,16 +543,17 @@ async def roster_reset(interaction: discord.Interaction, confirm: str):
         f"Removed {count} members and every coin check.\nAdd people with `/roster add`.", GREEN, "🧹 Fresh Start"))
 
 
+@app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
 @roster_group.command(name="remove", description="Remove someone from the roster and take their clan roles")
 @app_commands.describe(keep_roles="Leave their Discord roles alone (default: take gg Member and rank roles away)")
 @app_commands.autocomplete(roblox=roster_autocomplete)
-async def roster_remove(interaction: discord.Interaction, roblox: str, keep_roles: bool = False):
+async def roster_remove(interaction: discord.Interaction, roblox: str, keep_roles: bool = False, public: bool = False):
     m = store.get_member(roblox)
     if not m:
         await interaction.response.send_message(embed=simple(f"**{roblox}** isn't on the roster.", AMBER),
-                                                ephemeral=True)
+                                                ephemeral=not public)
         return
-    await interaction.response.defer(ephemeral=True)  # only the person who ran it sees the reply
+    await interaction.response.defer(ephemeral=not public)  # only the person who ran it sees the reply
     store.remove_member(roblox)
     others = [o for o in store.discord_id_owner(m.discord_id)] if m.discord_id else []
     if keep_roles:
@@ -559,7 +565,7 @@ async def roster_remove(interaction: discord.Interaction, roblox: str, keep_role
     footer = f"Roster: {len(store.members())}/100"
     await interaction.followup.send(embed=update_embed(
         f"🗑️ Removed {m.roblox_username}", "Their coin history is kept.", discord_roles=roles, group=group,
-        footer=footer), ephemeral=True)
+        footer=footer), ephemeral=not public)
     alert = update_embed(f"👋 Left the Clan: {m.roblox_username}", f"Removed by {interaction.user.mention}.",
                          color=RED, fields=[("Rank", m.rank, True),
                                             ("Discord", reports.dname(m.discord_id) or "Not linked", True)],
@@ -596,21 +602,22 @@ async def roster_exempt(interaction: discord.Interaction, roblox: str, exempt: b
     await interaction.response.send_message(embed=simple(text, PURPLE if ok and exempt else GREEN if ok else AMBER))
 
 
+@app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
 @roster_group.command(name="rank", description="Change someone's clan rank")
 @app_commands.autocomplete(roblox=roster_autocomplete)
 @app_commands.choices(rank=RANK_CHOICES)
-async def roster_rank(interaction: discord.Interaction, roblox: str, rank: app_commands.Choice[str]):
+async def roster_rank(interaction: discord.Interaction, roblox: str, rank: app_commands.Choice[str], public: bool = False):
     before = store.get_member(roblox)
     if not before or not store.update_member(roblox, rank=rank.value):
         await interaction.response.send_message(embed=simple(f"**{roblox}** isn't on the roster.", AMBER),
-                                                ephemeral=True)
+                                                ephemeral=not public)
         return
-    await interaction.response.defer(ephemeral=True)  # only the person who ran it sees the reply
+    await interaction.response.defer(ephemeral=not public)  # only the person who ran it sees the reply
     m = store.get_member(roblox)
     roles = await sync_roles(interaction.guild, m.discord_id, rank.value)
     group = await sync_group(m.roblox_username, m.roblox_id, rank.value)
     await interaction.followup.send(embed=update_embed(
-        f"🎖️ {m.roblox_username} is now {rank.value}", discord_roles=roles, group=group), ephemeral=True)
+        f"🎖️ {m.roblox_username} is now {rank.value}", discord_roles=roles, group=group), ephemeral=not public)
     if before.rank != rank.value:
         old_i = RANKS.index(before.rank) if before.rank in RANKS else len(RANKS)
         promoted = RANKS.index(rank.value) < old_i   # RANKS goes Leader, Admin, Officer, Member
@@ -940,36 +947,39 @@ class HelpView(discord.ui.View):
         self.add_item(HelpMenu())
 
 
+@app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
 @bot.tree.command(name="help", description="See every command and how to use it")
 @app_commands.guild_only()
-async def help_command(interaction: discord.Interaction):
+async def help_command(interaction: discord.Interaction, public: bool = False):
     embed = discord.Embed(title="📖 [gg] Bot Commands", description=help_text.overview(), color=reports.BLURPLE)
     embed.set_footer(text=f"[gg] bot v{RUNNING_VERSION}")
-    await interaction.response.send_message(embed=embed, view=HelpView(), ephemeral=True)
+    await interaction.response.send_message(embed=embed, view=HelpView(), ephemeral=not public)
 
 
 # ============================================================= /leaderboard ===
 
+@app_commands.describe(public="Show the reply to everyone in the channel (default: yes)")
 @bot.tree.command(name="leaderboard", description="See the latest coin check: everyone's coins and gains")
 @app_commands.guild_only()
-async def leaderboard(interaction: discord.Interaction):
+async def leaderboard(interaction: discord.Interaction, public: bool = True):
     cid = store.latest_check_id()
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=not public)
     await load_names()
     if not cid:   # no graded check yet: show everyone's current coins
-        await send_board(interaction, reports.current_coins_board(store.members()), ephemeral=True)
+        await send_board(interaction, reports.current_coins_board(store.members()), ephemeral=not public)
         return
     prev = store.previous_check_id(cid)
     board = reports.leaderboard_board(store.results(cid), store.check_label(cid),
                                       store.check_label(prev) if prev else None, store.get_minimum())
-    await send_board(interaction, board, ephemeral=True)
+    await send_board(interaction, board, ephemeral=not public)
 
 
 # ================================================================ /botinfo ===
 
+@app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
 @bot.tree.command(name="botinfo", description="Bot stats: uptime, ping, version and latest changes")
 @app_commands.guild_only()
-async def botinfo(interaction: discord.Interaction):
+async def botinfo(interaction: discord.Interaction, public: bool = False):
     ping = round(bot.latency * 1000)
     ping_dot = "🟢" if ping < 150 else "🟡" if ping < 400 else "🔴"
     members = store.members()
@@ -989,46 +999,48 @@ async def botinfo(interaction: discord.Interaction):
     if bot.user and bot.user.display_avatar:
         e.set_thumbnail(url=bot.user.display_avatar.url)
     e.set_footer(text=f"discord.py {discord.__version__} · Python {sys.version.split()[0]}")
-    await interaction.response.send_message(embed=e, ephemeral=True)
+    await interaction.response.send_message(embed=e, ephemeral=not public)
 
 
 # ============================================================== /mystatus ===
 
+@app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
 @bot.tree.command(name="mystatus", description="See your coin check results, and how much you still need")
 @app_commands.describe(current="Optional: your Contribution number in game right now, to see how much you still need")
 @app_commands.guild_only()
-async def mystatus(interaction: discord.Interaction, current: Optional[app_commands.Range[int, 0]] = None):
+async def mystatus(interaction: discord.Interaction, current: Optional[app_commands.Range[int, 0]] = None, public: bool = False):
     m = store.member_by_discord(interaction.user.id)
     if not m:
         await interaction.response.send_message(embed=simple(
             "I can't find you on the clan roster. If you're in the clan, ask a staff member to link your "
-            "Discord with `/roster link`.", AMBER), ephemeral=True)
+            "Discord with `/roster link`.", AMBER), ephemeral=not public)
         return
     title, desc, color = reports.member_status(m, store.history(m.roblox_username), store.get_minimum(), current)
     e = simple(desc, color, title)
     e.set_footer(text=f"[gg] bot v{RUNNING_VERSION}")
-    await interaction.response.send_message(embed=e, ephemeral=True)
+    await interaction.response.send_message(embed=e, ephemeral=not public)
 
 
 # ================================================================= /update ===
 
+@app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
 @bot.tree.command(name="update", description="Download the newest bot version and restart")
 @app_commands.default_permissions(manage_roles=True)
 @app_commands.guild_only()
-async def update(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True, thinking=True)   # only you see this
+async def update(interaction: discord.Interaction, public: bool = False):
+    await interaction.response.defer(ephemeral=not public, thinking=True)   # only you see this
     try:
         result = await asyncio.to_thread(updater.sync, GITHUB_REPO, GITHUB_BRANCH, GITHUB_TOKEN)
     except Exception as e:
         log.exception("Update failed")
         await interaction.followup.send(embed=simple(
             f"Couldn't download the update, so nothing changed and the bot keeps running.\n`{e}`",
-            RED, "⚠️ Update Failed"), ephemeral=True)
+            RED, "⚠️ Update Failed"), ephemeral=not public)
         return
     new_version = read_version()
     if not result.changed:
         await interaction.followup.send(embed=simple(
-            f"You're on the newest version, **v{RUNNING_VERSION}**.", GREEN, "✅ Up to Date"), ephemeral=True)
+            f"You're on the newest version, **v{RUNNING_VERSION}**.", GREEN, "✅ Up to Date"), ephemeral=not public)
         return
     e = discord.Embed(title=f"⬆️ Updating to v{new_version}", color=GREEN,
                       description="Restarting now. Back in a few seconds.")
@@ -1037,7 +1049,7 @@ async def update(interaction: discord.Interaction):
     news = changes_since(RUNNING_VERSION, new_version)
     if news:
         e.add_field(name="What's New", value="\n".join(f"**v{v}** · {t}" for v, t in news[:8])[:1024], inline=False)
-    await interaction.followup.send(embed=e, ephemeral=True)
+    await interaction.followup.send(embed=e, ephemeral=not public)
     log.info("Updating v%s -> v%s, restarting", RUNNING_VERSION, new_version)
     await asyncio.sleep(2)
     os.execv(sys.executable, [sys.executable, str(HERE / "main.py")])
@@ -1045,16 +1057,17 @@ async def update(interaction: discord.Interaction):
 
 # ================================================================ /restart ===
 
+@app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
 @bot.tree.command(name="restart", description="Restart the bot (no website needed)")
 @app_commands.default_permissions(manage_roles=True)
 @app_commands.guild_only()
-async def restart(interaction: discord.Interaction):
+async def restart(interaction: discord.Interaction, public: bool = False):
     up = (dt.datetime.now(dt.timezone.utc) - STARTED_AT).total_seconds()
     e = update_embed("🔄 Restarting", "The bot will be back in a few seconds.", reports.BLURPLE, fields=[
         ("Version", f"v{RUNNING_VERSION}", True),
         ("Was Online For", nice_duration(up), True),
     ])
-    await interaction.response.send_message(embed=e, ephemeral=True)
+    await interaction.response.send_message(embed=e, ephemeral=not public)
     log.info("Restart requested by %s", interaction.user)
     await asyncio.sleep(2)
     os.execv(sys.executable, [sys.executable, str(HERE / "main.py")])
@@ -1206,10 +1219,11 @@ async def _wait_ready_reminders():
     await bot.wait_until_ready()
 
 
+@app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
 @bot.tree.command(name="reminders", description="See the reminder settings and send a test ping")
 @app_commands.default_permissions(manage_roles=True)
 @app_commands.guild_only()
-async def reminders(interaction: discord.Interaction):
+async def reminders(interaction: discord.Interaction, public: bool = False):
     tz = reminder_tz()
     now = dt.datetime.now(tz)
     nxt = now.replace(day=COIN_REMINDER_DAY, hour=REMINDER_HOUR, minute=0, second=0, microsecond=0)
@@ -1228,7 +1242,7 @@ async def reminders(interaction: discord.Interaction):
                                              description="Reminders will show up here like this.")) \
         if REMINDER_CHANNEL_ID else False
     e.set_footer(text="✅ Test ping sent" if sent else "Couldn't send a test (check the channel setting)")
-    await interaction.response.send_message(embed=e, ephemeral=True)
+    await interaction.response.send_message(embed=e, ephemeral=not public)
 
 
 def run():

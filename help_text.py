@@ -24,7 +24,7 @@ COMMANDS: list[HelpEntry] = [
               "See the latest coin check: everyone's coins and gains",
               "/leaderboard",
               "Shows every member's Discord, Roblox name, total coins and how much they gained, best first. "
-              "Switch to A–Z with the menu. Only you see it."),
+              "Switch to A–Z with the menu. Everyone in the channel sees it (set **public** to False for just you)."),
     HelpEntry("/botinfo", "Everyone", False,
               "Bot stats: uptime, ping, version and latest changes",
               "/botinfo",
@@ -139,7 +139,8 @@ CATEGORY_EMOJI = {"Everyone": "👋", "Roster": "📋", "Coin checks": "🪙", "
 
 
 def overview() -> str:
-    lines = ["-# Pick a command from the menu below to see how to use it. 🔒 = staff only", ""]
+    lines = ["-# Pick a command from the menu below to see how to use it. 🔒 = staff only",
+             "-# Replies that only you see have a **public** option to show them to everyone.", ""]
     for cat in CATEGORY_EMOJI:
         lines.append(f"**{CATEGORY_EMOJI[cat]} {cat}**")
         for c in (c for c in COMMANDS if c.category == cat):
