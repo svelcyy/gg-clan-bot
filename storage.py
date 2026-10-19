@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS members (
     rank            TEXT NOT NULL DEFAULT 'Member',
     exempt          INTEGER NOT NULL DEFAULT 0,
     notes           TEXT NOT NULL DEFAULT '',
-    added_at        TEXT NOT NULL
+    added_at        TEXT NOT NULL,
+    start_total     INTEGER
 );
 CREATE TABLE IF NOT EXISTS checks (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,12 +55,14 @@ class Member:
     rank: str
     exempt: bool
     notes: str
+    start_total: int | None = None   # their in-game Contribution when they were added
+    added_at: str = ""
 
 
 @dataclass
 class Result:
     member: Member
-    status: str            # Pass, Fail, Exempt, Baseline, Missing
+    status: str            # Pass, Fail, Exempt, Baseline, Missing, New
     total: int | None      # total in this check
     previous: int | None   # total in the previous check
     gained: int | None
@@ -72,6 +75,9 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA foreign_keys = ON")
         self.db.executescript(SCHEMA)
+        cols = {r["name"] for r in self.db.execute("PRAGMA table_info(members)")}
+        if "start_total" not in cols:  # databases made by older versions
+            self.db.execute("ALTER TABLE members ADD COLUMN start_total INTEGER")
         self.db.commit()
 
     # ------------------------------------------------------------ settings --
@@ -88,7 +94,7 @@ class Store:
     @staticmethod
     def _member(row) -> Member:
         return Member(row["roblox_username"], row["roblox_id"], row["discord_id"],
-                      row["rank"], bool(row["exempt"]), row["notes"])
+                      row["rank"], bool(row["exempt"]), row["notes"], row["start_total"], row["added_at"])
 
     def get_member(self, roblox_username: str) -> Member | None:
         row = self.db.execute("SELECT * FROM members WHERE roblox_username=?",
@@ -108,14 +114,15 @@ class Store:
                                          m.roblox_username.lower()))
 
     def add_member(self, roblox_username: str, roblox_id: int | None = None, discord_id: int | None = None,
-                   rank: str = "Member", exempt: bool = False, notes: str = "") -> bool:
+                   rank: str = "Member", exempt: bool = False, notes: str = "",
+                   start_total: int | None = None) -> bool:
         """Returns False if that Roblox username is already on the roster."""
         if self.get_member(roblox_username):
             return False
         self.db.execute(
-            "INSERT INTO members(roblox_username,roblox_id,discord_id,rank,exempt,notes,added_at) "
-            "VALUES(?,?,?,?,?,?,?)",
-            (roblox_username.strip(), roblox_id, discord_id, rank, int(exempt), notes, _now()))
+            "INSERT INTO members(roblox_username,roblox_id,discord_id,rank,exempt,notes,added_at,start_total) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (roblox_username.strip(), roblox_id, discord_id, rank, int(exempt), notes, _now(), start_total))
         self.db.commit()
         return True
 
@@ -125,7 +132,7 @@ class Store:
         return cur.rowcount > 0
 
     def update_member(self, roblox_username: str, **fields) -> bool:
-        allowed = {"roblox_id", "discord_id", "rank", "exempt", "notes"}
+        allowed = {"roblox_id", "discord_id", "rank", "exempt", "notes", "start_total"}
         sets = {k: (int(v) if k == "exempt" else v) for k, v in fields.items() if k in allowed}
         if not sets:
             return False
@@ -149,6 +156,10 @@ class Store:
     def previous_check_id(self, check_id: int) -> int | None:
         row = self.db.execute("SELECT MAX(id) AS id FROM checks WHERE id < ?", (check_id,)).fetchone()
         return row["id"]
+
+    def check_created(self, check_id: int) -> str:
+        row = self.db.execute("SELECT created_at FROM checks WHERE id=?", (check_id,)).fetchone()
+        return row["created_at"] if row else ""
 
     def check_label(self, check_id: int) -> str:
         row = self.db.execute("SELECT label FROM checks WHERE id=?", (check_id,)).fetchone()
@@ -187,12 +198,17 @@ class Store:
         prev_id = self.previous_check_id(check_id)
         before = self.totals(prev_id) if prev_id else {}
         out = []
+        created = self.check_created(check_id)
         for m in self.members():
             key = m.roblox_username.lower()
             total, previous = now.get(key), before.get(key)
+            if previous is None:          # first check since they joined: compare with their starting coins
+                previous = m.start_total
             gained = total - previous if total is not None and previous is not None else None
             if m.exempt:
                 status = "Exempt"
+            elif total is None and m.added_at > created:
+                status = "New"            # joined after this check was imported
             elif total is None:
                 status = "Missing"
             elif previous is None:
@@ -210,11 +226,23 @@ class Store:
         rows = self.db.execute(
             "SELECT c.id, c.label, t.total FROM totals t JOIN checks c ON c.id=t.check_id "
             "WHERE t.roblox_username=? ORDER BY c.id", (roblox_username.strip(),)).fetchall()
+        m = self.get_member(roblox_username)
         out, prev = [], None
+        if m and m.start_total is not None:
+            out.append(("Joined", m.start_total, None))
+            prev = m.start_total
         for r in rows:
             out.append((r["label"], r["total"], None if prev is None else r["total"] - prev))
             prev = r["total"]
         return list(reversed(out))[:limit]
+
+    def reset_all(self) -> None:
+        """Delete every member and every coin check. Settings (like the minimum) are kept."""
+        self.db.execute("DELETE FROM totals")
+        self.db.execute("DELETE FROM checks")
+        self.db.execute("DELETE FROM members")
+        self.db.execute("DELETE FROM sqlite_sequence WHERE name='checks'")
+        self.db.commit()
 
     # ------------------------------------------------------------- CSV i/o --
     def export_csv(self) -> str:

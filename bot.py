@@ -66,13 +66,6 @@ WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", 
 STAFF_ONLY = discord.Permissions(manage_roles=True)
 
 store = Store(DB_PATH)
-if (HERE / "seed_roster.csv").exists():
-    seeded = store.seed_if_empty(
-        (HERE / "seed_roster.csv").read_text(encoding="utf-8"),
-        (HERE / "seed_totals.csv").read_text(encoding="utf-8") if (HERE / "seed_totals.csv").exists() else None,
-        "18 Oct 2026")
-    if seeded:
-        log.info("Loaded the starting roster and the 18 Oct 2026 totals")
 
 
 # ================================================================ boards ===
@@ -242,11 +235,13 @@ roster_group = app_commands.Group(name="roster", description="Manage the clan ro
                                   default_permissions=STAFF_ONLY, guild_only=True)
 
 
-@roster_group.command(name="add", description="Add a new clan member")
+@roster_group.command(name="add", description="Add someone to the clan roster with their starting coins")
 @app_commands.describe(roblox="Their Roblox username (the @ name)", discord_user="Their Discord account",
+                       coins="Their Contribution number in game right now (their starting point)",
                        rank="Clan rank (default Member)", exempt="Skip them in coin checks?", notes="Optional note")
 @app_commands.choices(rank=RANK_CHOICES)
 async def roster_add(interaction: discord.Interaction, roblox: str, discord_user: Optional[discord.User] = None,
+                     coins: Optional[app_commands.Range[int, 0]] = None,
                      rank: Optional[app_commands.Choice[str]] = None, exempt: bool = False, notes: str = ""):
     await interaction.response.defer()
     name, rid, warn = roblox.strip().lstrip("@"), None, ""
@@ -264,14 +259,47 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
     if discord_user and store.discord_id_owner(discord_user.id):
         warn += f"\n⚠️ That Discord account is also linked to {', '.join(store.discord_id_owner(discord_user.id))}."
     rank_name = rank.value if rank else "Member"
-    if not store.add_member(name, rid, discord_user.id if discord_user else None, rank_name, exempt, notes):
+    if not store.add_member(name, rid, discord_user.id if discord_user else None, rank_name, exempt, notes, coins):
         await interaction.followup.send(embed=simple(f"**{name}** is already on the roster.", AMBER))
         return
-    e = simple("Their first coin check will be their starting point (Baseline)." + warn, GREEN, f"✅ Added {name}")
-    e.add_field(name="Discord", value=discord_user.mention if discord_user else "*not linked yet*", inline=True)
-    e.add_field(name="Rank", value=rank_name + (" · 🛡️ exempt" if exempt else ""), inline=True)
-    e.add_field(name="Roster", value=f"{len(store.members())}/100", inline=True)
-    await interaction.followup.send(embed=e)
+    lines = [f"-# {rank_name}" + (" · 🛡️ exempt" if exempt else "") +
+             f" · {discord_user.mention if discord_user else 'Discord not linked'}"]
+    if coins is not None:
+        lines.append(f"Starting coins: **{coins:,}**\n-# their next coin check measures from here")
+    else:
+        lines.append("No starting coins given.\n-# their first coin check becomes their starting point "
+                     "(set it now with `/roster start`)")
+    lines.append(f"-# roster {len(store.members())}/100")
+    await interaction.followup.send(embed=simple("\n".join(lines) + warn, GREEN, f"✅ Added {name}"))
+
+
+@roster_group.command(name="start", description="Set or fix someone's starting coins")
+@app_commands.describe(coins="Their Contribution number at the point they should be measured from")
+@app_commands.autocomplete(roblox=roster_autocomplete)
+async def roster_start(interaction: discord.Interaction, roblox: str, coins: app_commands.Range[int, 0]):
+    ok = store.update_member(roblox, start_total=coins)
+    await interaction.response.send_message(embed=simple(
+        f"**{roblox}** · starting coins set to **{coins:,}**" if ok else f"**{roblox}** isn't on the roster.",
+        GREEN if ok else AMBER))
+
+
+@roster_group.command(name="reset", description="Delete the whole roster and every coin check (admins only)")
+@app_commands.describe(confirm="Type RESET in capitals to confirm")
+async def roster_reset(interaction: discord.Interaction, confirm: str):
+    perms = getattr(interaction.user, "guild_permissions", None)
+    if not (perms and perms.administrator):
+        await interaction.response.send_message(embed=simple(
+            "Only server admins can reset the roster.", RED), ephemeral=True)
+        return
+    if confirm != "RESET":
+        await interaction.response.send_message(embed=simple(
+            "Nothing deleted. To wipe the roster and all coin checks, type `RESET` in capitals.", AMBER),
+            ephemeral=True)
+        return
+    count = len(store.members())
+    store.reset_all()
+    await interaction.response.send_message(embed=simple(
+        f"Removed {count} members and every coin check.\n-# Add people with `/roster add`", GREEN, "🧹 Fresh start"))
 
 
 @roster_group.command(name="remove", description="Remove someone from the roster (their coin history is kept)")

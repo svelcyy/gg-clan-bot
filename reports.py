@@ -39,6 +39,7 @@ class ListView:
     label: str                 # name in the menu, e.g. "❌ Failed"
     entries: list[Entry]
     ranked: bool = False       # medals for the top 3 instead of 1. 2. 3.
+    medal_limit: int = 3       # only the first N entries can get a medal
     empty: str = "Nobody here 🎉"
 
 
@@ -70,7 +71,7 @@ class Board:
         if not chunk:
             lines.append(lv.empty)
         for i, e in enumerate(chunk, start=page * PER_PAGE):
-            prefix = MEDALS[i] if lv.ranked and i < 3 else f"{i + 1}."
+            prefix = MEDALS[i] if lv.ranked and i < min(3, lv.medal_limit) else f"{i + 1}."
             lines.append(f"{prefix} {e.main}")
             if e.sub:
                 lines.append(f"-# {e.sub}")
@@ -81,7 +82,7 @@ class Board:
 
 def coin_board(results: list[Result], label: str, prev_label: str | None, minimum: int,
                unknown_names: list[str] | None = None, csv_text: str | None = None) -> Board:
-    by = {s: [r for r in results if r.status == s] for s in ("Pass", "Fail", "Baseline", "Missing", "Exempt")}
+    by = {s: [r for r in results if r.status == s] for s in ("Pass", "Fail", "Baseline", "Missing", "Exempt", "New")}
 
     def entry(r: Result) -> Entry:
         name = f"**{r.member.roblox_username}**"
@@ -90,16 +91,19 @@ def coin_board(results: list[Result], label: str, prev_label: str | None, minimu
         if r.status == "Fail":
             return Entry(f"{name} · +{r.gained:,} ❌", f"short {r.short_by:,} · {n(r.previous)} → {n(r.total)}")
         if r.status == "Baseline":
-            return Entry(f"{name} · 🆕 starting point", f"total {n(r.total)} · counts from next check")
+            return Entry(f"{name} · 🆕", f"total {n(r.total)} · counts from next check")
+        if r.status == "New":
+            start = f" · started at {r.member.start_total:,}" if r.member.start_total is not None else ""
+            return Entry(f"{name} · 🆕", f"joined after this check{start}")
         if r.status == "Missing":
             return Entry(f"{name} · ❓ not in this import", f"last total {n(r.previous)}")
         gained = f" · +{r.gained:,}" if r.gained is not None else ""
         return Entry(f"{name} · 🛡️ exempt", f"{r.member.rank}{gained}")
 
     checked = sorted(by["Pass"] + by["Fail"], key=lambda r: -(r.gained or 0))
-    baseline = sorted(by["Baseline"], key=lambda r: -(r.total or 0))
+    baseline = sorted(by["Baseline"], key=lambda r: -(r.total or 0)) + by["New"]
     everyone = checked + baseline + by["Missing"]
-    lists = [ListView("📊 Everyone", [entry(r) for r in everyone], ranked=bool(checked))]
+    lists = [ListView("📊 Everyone", [entry(r) for r in everyone], ranked=bool(checked), medal_limit=len(checked))]
     lists.append(ListView(f"❌ Failed ({len(by['Fail'])})",
                           [entry(r) for r in sorted(by["Fail"], key=lambda r: r.gained or 0)],
                           empty="Nobody failed 🎉"))
@@ -109,16 +113,16 @@ def coin_board(results: list[Result], label: str, prev_label: str | None, minimu
     if by["Missing"]:
         lists.append(ListView(f"❓ Missing ({len(by['Missing'])})", [entry(r) for r in by["Missing"]]))
     if by["Baseline"]:
-        lists.append(ListView(f"🆕 Starting point ({len(baseline)})", [entry(r) for r in baseline]))
+        lists.append(ListView(f"🆕 New ({len(baseline)})", [entry(r) for r in baseline]))
     if unknown_names:
         lists.append(ListView(f"⚠️ Not on roster ({len(unknown_names)})",
                               [Entry(f"**{u}**", "in the import but not on the roster · /roster add or /coins set")
                                for u in unknown_names]))
     lists.append(ListView(f"🛡️ Exempt ({len(by['Exempt'])})", [entry(r) for r in by["Exempt"]]))
 
-    parts = [f"Compared with {prev_label}" if prev_label else "First check (starting point)",
+    parts = [f"Compared with {prev_label}" if prev_label else "Compared with starting coins",
              f"min {minimum:,}"]
-    if prev_label:
+    if by["Pass"] or by["Fail"]:
         parts.append(f"✅ {len(by['Pass'])} · ❌ {len(by['Fail'])}")
     if by["Missing"]:
         parts.append(f"❓ {len(by['Missing'])}")
@@ -134,7 +138,9 @@ def roster_board(members: list[Member], latest: dict[str, Result] | None = None,
 
     def total(m: Member) -> int:
         r = latest.get(m.roblox_username)
-        return r.total if r and r.total is not None else -1
+        if r and r.total is not None:
+            return r.total
+        return m.start_total if m.start_total is not None else -1
 
     def entry(m: Member, show_total: bool = True) -> Entry:
         t = total(m)
@@ -233,7 +239,7 @@ def member_status(m: Member, history: list[tuple[str, int, int | None]], minimum
         lines.append("No coin checks recorded yet.")
     for label, total, gained in history:
         if gained is None:
-            lines += [f"**{label}** · 🆕 starting point", f"-# total {total:,}"]
+            lines += [f"**{label}** · 🆕", f"-# total {total:,}"]
         elif m.exempt:
             lines += [f"**{label}** · +{gained:,}", f"-# total {total:,}"]
         else:
