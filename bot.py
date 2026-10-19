@@ -28,6 +28,7 @@ from discord import app_commands
 from discord.ext import tasks
 from dotenv import load_dotenv
 
+import help_text
 import reports
 import roblox as rbx
 import updater
@@ -50,6 +51,13 @@ def env(name: str, default: str | None = None, required: bool = False) -> str | 
 TOKEN = env("DISCORD_TOKEN", required=True)
 GUILD_ID = int(env("GUILD_ID", required=True))
 MEMBER_ROLE = env("DISCORD_MEMBER_ROLE", "gg Member")
+# Discord role for each clan rank (name or role ID). Leave empty for "no extra role".
+RANK_ROLES = {
+    "Leader": env("ROLE_LEADER", ""),
+    "Admin": env("ROLE_ADMIN", "Clan Admin"),
+    "Officer": env("ROLE_OFFICER", "Clan Officer"),
+    "Member": "",
+}
 STAFF_CHANNEL_ID = env("STAFF_CHANNEL_ID") or env("REPORT_CHANNEL_ID")
 ROBLOX_GROUP_ID = int(env("ROBLOX_GROUP_ID", "16909817"))
 ROBLOX_MIN_RANK = int(env("ROBLOX_MIN_RANK", "75"))
@@ -197,6 +205,52 @@ async def roster_autocomplete(interaction: discord.Interaction, current: str):
 RANK_CHOICES = [app_commands.Choice(name=r, value=r) for r in RANKS]
 
 
+# ================================================================== roles ===
+
+def find_role(guild: discord.Guild, name_or_id: str) -> discord.Role | None:
+    if not name_or_id:
+        return None
+    if name_or_id.isdigit():
+        return guild.get_role(int(name_or_id))
+    return discord.utils.get(guild.roles, name=name_or_id)
+
+
+async def sync_roles(guild: discord.Guild, discord_id: int | None, rank: str | None) -> str:
+    """Give someone gg Member + their rank's role and take away other rank roles.
+    rank=None means they left the clan: take all clan roles away. Returns one short line for the reply."""
+    if not discord_id:
+        return "-# Discord not linked, so no roles changed"
+    try:
+        member = await guild.fetch_member(discord_id)
+    except discord.NotFound:
+        return "-# ⚠️ They're not in this Discord server, so no roles changed"
+    except discord.HTTPException as e:
+        return f"-# ⚠️ Couldn't look them up in Discord ({e.status})"
+    managed = {r for r in [find_role(guild, MEMBER_ROLE)] + [find_role(guild, n) for n in RANK_ROLES.values()] if r}
+    wanted = set()
+    if rank is not None:
+        wanted = {r for r in (find_role(guild, MEMBER_ROLE), find_role(guild, RANK_ROLES.get(rank, ""))) if r}
+    have = set(member.roles)
+    add, remove = wanted - have, (managed - wanted) & have
+    if not add and not remove:
+        return "-# Discord roles already correct"
+    try:
+        if add:
+            await member.add_roles(*add, reason="[gg] roster update")
+        if remove:
+            await member.remove_roles(*remove, reason="[gg] roster update")
+    except discord.Forbidden:
+        names = ", ".join(r.name for r in add | remove)
+        return (f"-# ⚠️ Couldn't change roles ({names}). Give the bot **Manage Roles** and drag its role "
+                f"above these roles in Server Settings › Roles.")
+    parts = []
+    if add:
+        parts.append("➕ " + ", ".join(r.name for r in add))
+    if remove:
+        parts.append("➖ " + ", ".join(r.name for r in remove))
+    return "-# Discord roles: " + " · ".join(parts)
+
+
 # ================================================================ the bot ===
 
 intents = discord.Intents.default()
@@ -269,6 +323,7 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
     else:
         lines.append("No starting coins given.\n-# their first coin check becomes their starting point "
                      "(set it now with `/roster start`)")
+    lines.append(await sync_roles(interaction.guild, discord_user.id if discord_user else None, rank_name))
     lines.append(f"-# roster {len(store.members())}/100")
     await interaction.followup.send(embed=simple("\n".join(lines) + warn, GREEN, f"✅ Added {name}"))
 
@@ -302,13 +357,25 @@ async def roster_reset(interaction: discord.Interaction, confirm: str):
         f"Removed {count} members and every coin check.\n-# Add people with `/roster add`", GREEN, "🧹 Fresh start"))
 
 
-@roster_group.command(name="remove", description="Remove someone from the roster (their coin history is kept)")
+@roster_group.command(name="remove", description="Remove someone from the roster and take their clan roles")
+@app_commands.describe(keep_roles="Leave their Discord roles alone (default: take gg Member and rank roles away)")
 @app_commands.autocomplete(roblox=roster_autocomplete)
-async def roster_remove(interaction: discord.Interaction, roblox: str):
-    ok = store.remove_member(roblox)
-    await interaction.response.send_message(embed=simple(
-        f"🗑️ Removed **{roblox}**. Roster: {len(store.members())}/100." if ok else f"**{roblox}** isn't on the roster.",
-        GREEN if ok else AMBER))
+async def roster_remove(interaction: discord.Interaction, roblox: str, keep_roles: bool = False):
+    m = store.get_member(roblox)
+    if not m:
+        await interaction.response.send_message(embed=simple(f"**{roblox}** isn't on the roster.", AMBER))
+        return
+    await interaction.response.defer()
+    store.remove_member(roblox)
+    others = [o for o in store.discord_id_owner(m.discord_id)] if m.discord_id else []
+    if keep_roles:
+        roles = "-# Discord roles left as they were"
+    elif others:  # same Discord account still on the roster under another name
+        roles = f"-# Discord roles kept: that account is still on the roster as {', '.join(others)}"
+    else:
+        roles = await sync_roles(interaction.guild, m.discord_id, None)
+    await interaction.followup.send(embed=simple(
+        f"{roles}\n-# roster {len(store.members())}/100 · coin history kept", GREEN, f"🗑️ Removed {m.roblox_username}"))
 
 
 @roster_group.command(name="link", description="Link a member's Discord account")
@@ -318,12 +385,15 @@ async def roster_link(interaction: discord.Interaction, roblox: str, discord_use
         await interaction.response.send_message(embed=simple(
             f"**{roblox}** isn't on the roster. Add them with `/roster add`.", AMBER))
         return
+    await interaction.response.defer()
     others = [o for o in store.discord_id_owner(discord_user.id) if o.lower() != roblox.lower()]
     store.update_member(roblox, discord_id=discord_user.id)
-    text = f"🔗 **{roblox}** is now linked to {discord_user.mention}."
+    m = store.get_member(roblox)
+    text = f"🔗 **{m.roblox_username}** is now linked to {discord_user.mention}."
     if others:
         text += f"\n⚠️ That Discord account is also linked to {', '.join(others)}."
-    await interaction.response.send_message(embed=simple(text))
+    text += "\n" + await sync_roles(interaction.guild, discord_user.id, m.rank)
+    await interaction.followup.send(embed=simple(text))
 
 
 @roster_group.command(name="exempt", description="Turn coin-check exemption on or off")
@@ -339,9 +409,13 @@ async def roster_exempt(interaction: discord.Interaction, roblox: str, exempt: b
 @app_commands.autocomplete(roblox=roster_autocomplete)
 @app_commands.choices(rank=RANK_CHOICES)
 async def roster_rank(interaction: discord.Interaction, roblox: str, rank: app_commands.Choice[str]):
-    ok = store.update_member(roblox, rank=rank.value)
-    await interaction.response.send_message(embed=simple(
-        f"**{roblox}** is now {rank.value}." if ok else f"**{roblox}** isn't on the roster.", GREEN if ok else AMBER))
+    if not store.update_member(roblox, rank=rank.value):
+        await interaction.response.send_message(embed=simple(f"**{roblox}** isn't on the roster.", AMBER))
+        return
+    await interaction.response.defer()
+    m = store.get_member(roblox)
+    roles = await sync_roles(interaction.guild, m.discord_id, rank.value)
+    await interaction.followup.send(embed=simple(f"**{m.roblox_username}** is now **{rank.value}**.\n{roles}"))
 
 
 @roster_group.command(name="note", description="Set a note on a member (leave empty to clear)")
@@ -453,6 +527,41 @@ async def coins_undo(interaction: discord.Interaction, confirm: str):
         return
     store.delete_check(cid)
     await interaction.response.send_message(embed=simple(f"🗑️ Deleted the coin check **{label}**."))
+
+
+# =================================================================== /help ===
+
+class HelpMenu(discord.ui.Select):
+    def __init__(self):
+        options = [discord.SelectOption(label="Overview", value="__overview", emoji="📖", default=True)]
+        for c in help_text.COMMANDS[:24]:
+            options.append(discord.SelectOption(
+                label=c.name, value=c.name, description=c.short[:100],
+                emoji=help_text.CATEGORY_EMOJI[c.category]))
+        super().__init__(placeholder="Pick a command…", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        choice = self.values[0]
+        for o in self.options:
+            o.default = o.value == choice
+        if choice == "__overview":
+            embed = discord.Embed(title="📖 [gg] bot commands", description=help_text.overview(), color=reports.BLURPLE)
+        else:
+            embed = discord.Embed(title=choice, description=help_text.detail(choice), color=reports.BLURPLE)
+        await interaction.response.edit_message(embed=embed, view=self.view)
+
+
+class HelpView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=600)
+        self.add_item(HelpMenu())
+
+
+@bot.tree.command(name="help", description="See every command and how to use it")
+@app_commands.guild_only()
+async def help_command(interaction: discord.Interaction):
+    embed = discord.Embed(title="📖 [gg] bot commands", description=help_text.overview(), color=reports.BLURPLE)
+    await interaction.response.send_message(embed=embed, view=HelpView(), ephemeral=True)
 
 
 # ============================================================== /mystatus ===
