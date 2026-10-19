@@ -62,6 +62,13 @@ STAFF_CHANNEL_ID = env("STAFF_CHANNEL_ID") or env("REPORT_CHANNEL_ID")
 ROBLOX_GROUP_ID = int(env("ROBLOX_GROUP_ID", "16909817"))
 ROBLOX_MIN_RANK = int(env("ROBLOX_MIN_RANK", "75"))
 ROBLOX_IGNORE_ROLES = {r.strip().lower() for r in env("ROBLOX_IGNORE_ROLES", "UGC").split(",") if r.strip()}
+ROBLOX_API_KEY = env("ROBLOX_API_KEY")       # Open Cloud key with Groups read + write (optional)
+GROUP_ROLES = {                              # clan rank -> Roblox group role name ("" = no clan role)
+    "Leader": env("ROBLOX_ROLE_LEADER", ""),
+    "Admin": env("ROBLOX_ROLE_ADMIN", "Clan Admin"),
+    "Officer": env("ROBLOX_ROLE_OFFICER", "Clan Officer"),
+    "Member": env("ROBLOX_ROLE_MEMBER", "Clan Member"),
+}
 WEEKLY_CHECK = env("WEEKLY_CHECK", "on").lower() in ("on", "yes", "true", "1")
 REPORT_WEEKDAY = env("REPORT_WEEKDAY", "sunday").lower()
 REPORT_HOUR_UTC = int(env("REPORT_HOUR_UTC", "17"))
@@ -207,6 +214,32 @@ RANK_CHOICES = [app_commands.Choice(name=r, value=r) for r in RANKS]
 
 # ================================================================== roles ===
 
+group_manager = (rbx.GroupManager(ROBLOX_API_KEY, ROBLOX_GROUP_ID, GROUP_ROLES, ROBLOX_IGNORE_ROLES)
+                 if ROBLOX_API_KEY else None)
+
+
+async def sync_group(roblox_username: str, roblox_id: int | None, rank: str | None) -> str:
+    """Set the Roblox group role to match the clan rank (rank=None: they left). One short line for the reply."""
+    if not group_manager:
+        return ""
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as s:
+            if not roblox_id:
+                found = await rbx.lookup_usernames(s, [roblox_username])
+                if roblox_username.lower() not in found:
+                    return "-# Roblox group: couldn't find that Roblox account"
+                roblox_id = found[roblox_username.lower()][0]
+                store.update_member(roblox_username, roblox_id=roblox_id)
+            result = await group_manager.sync(s, roblox_id, rank)
+        return f"-# Roblox group: {result}"
+    except rbx.CloudError as e:
+        log.warning("Group sync failed for %s: %s", roblox_username, e)
+        return f"-# ⚠️ Roblox group: {e.friendly()}"
+    except Exception as e:
+        log.exception("Group sync failed")
+        return f"-# ⚠️ Roblox group: couldn't update ({e})"
+
+
 def find_role(guild: discord.Guild, name_or_id: str) -> discord.Role | None:
     if not name_or_id:
         return None
@@ -324,6 +357,9 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
         lines.append("No starting coins given.\n-# their first coin check becomes their starting point "
                      "(set it now with `/roster start`)")
     lines.append(await sync_roles(interaction.guild, discord_user.id if discord_user else None, rank_name))
+    group_line = await sync_group(name, rid, rank_name)
+    if group_line:
+        lines.append(group_line)
     lines.append(f"-# roster {len(store.members())}/100")
     await interaction.followup.send(embed=simple("\n".join(lines) + warn, GREEN, f"✅ Added {name}"))
 
@@ -374,6 +410,10 @@ async def roster_remove(interaction: discord.Interaction, roblox: str, keep_role
         roles = f"-# Discord roles kept: that account is still on the roster as {', '.join(others)}"
     else:
         roles = await sync_roles(interaction.guild, m.discord_id, None)
+    if not keep_roles:
+        group_line = await sync_group(m.roblox_username, m.roblox_id, None)
+        if group_line:
+            roles += "\n" + group_line
     await interaction.followup.send(embed=simple(
         f"{roles}\n-# roster {len(store.members())}/100 · coin history kept", GREEN, f"🗑️ Removed {m.roblox_username}"))
 
@@ -415,7 +455,9 @@ async def roster_rank(interaction: discord.Interaction, roblox: str, rank: app_c
     await interaction.response.defer()
     m = store.get_member(roblox)
     roles = await sync_roles(interaction.guild, m.discord_id, rank.value)
-    await interaction.followup.send(embed=simple(f"**{m.roblox_username}** is now **{rank.value}**.\n{roles}"))
+    group_line = await sync_group(m.roblox_username, m.roblox_id, rank.value)
+    await interaction.followup.send(embed=simple(
+        f"**{m.roblox_username}** is now **{rank.value}**.\n{roles}" + (f"\n{group_line}" if group_line else "")))
 
 
 @roster_group.command(name="note", description="Set a note on a member (leave empty to clear)")

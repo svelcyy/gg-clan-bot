@@ -29,12 +29,13 @@ COMMANDS: list[HelpEntry] = [
               "Add someone to the clan with rank, Discord and starting coins",
               "/roster add roblox:pramishp4 discord_user:@1TAP coins:863128 rank:Member",
               "Checks the Roblox name is real, saves their Discord account and starting coins, "
-              "and gives them **gg Member** plus their rank's role in Discord.\n"
+              "gives them **gg Member** plus their rank's role in Discord, and sets their **Roblox group** role "
+              "(accepting their join request if they've sent one).\n"
               "**coins** is their Contribution number right now. Their next coin check measures from it."),
     HelpEntry("/roster rank", "Roster", True,
               "Change someone's clan rank (and their Discord role)",
               "/roster rank roblox:zayn rank:Officer",
-              "Updates the roster and swaps their Discord rank role to match."),
+              "Updates the roster and swaps their Discord rank role and Roblox group role to match."),
     HelpEntry("/roster link", "Roster", True,
               "Link or change someone's Discord account",
               "/roster link roblox:pramishp4 discord_user:@1TAP",
@@ -43,8 +44,9 @@ COMMANDS: list[HelpEntry] = [
     HelpEntry("/roster remove", "Roster", True,
               "Take someone off the roster (and their clan roles)",
               "/roster remove roblox:pramishp4",
-              "Removes them from the roster and takes away **gg Member** and their rank role. "
-              "Set **keep_roles** to True to leave their Discord roles alone. Their coin history is kept."),
+              "Removes them from the roster, takes away **gg Member** and their rank role in Discord, "
+              "and drops them to the basic role in the Roblox group. "
+              "Set **keep_roles** to True to leave their roles alone. Their coin history is kept."),
     HelpEntry("/roster start", "Roster", True,
               "Set or fix someone's starting coins",
               "/roster start roblox:pramishp4 coins:863128",
