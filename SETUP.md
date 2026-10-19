@@ -21,7 +21,7 @@ On the first start, the bot loads today's roster (81 members, 11 exempt, Discord
 ## Monthly coin check (about 5 minutes)
 
 1. In Bedwars, screenshot the clan's **Contribution** list from top to bottom.
-2. Send the screenshots to Claude. You get back a `.csv` file with one `username,total` per line.
+2. Turn the screenshots into a list with one `username total` per line.
 3. In Discord, run **`/coins import`**, attach the file and give it a name like `Nov 2026`.
 4. The bot posts:
    - **Fail**: who gained less than the minimum, and by how much they were short

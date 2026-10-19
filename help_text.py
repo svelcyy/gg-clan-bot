@@ -92,7 +92,7 @@ COMMANDS: list[HelpEntry] = [
               "Import this month's totals, check the preview, then save",
               "/coins import label:Nov 2026  (then paste)  ·  or attach a file",
               "Leave **file** empty and a box opens: paste one `username number` per line "
-              "(Claude can make the list from your screenshots).\n"
+              "(one line per member, copied from the in-game clan list).\n"
               "You get a private **preview** first: who matched, who's missing, who isn't on the roster, "
               "and anyone who changed their Roblox username (spotted by their Roblox account, so their "
               "Discord link and history move with them). Nothing is saved until you click **✅ Save**. "
@@ -143,7 +143,7 @@ COMMANDS: list[HelpEntry] = [
     HelpEntry("/update", "Bot", True,
               "Download the newest bot version and restart",
               "/update",
-              "Run this after Claude says an update has been pushed. The bot is back in a few seconds."),
+              "Gets the newest version of the bot. The bot is back in a few seconds."),
 ]
 
 # Clan Manager commands: need the Administrator permission
