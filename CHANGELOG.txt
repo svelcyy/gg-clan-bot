@@ -1,4 +1,5 @@
 # Newest first. Format: version | what changed
+2.18.0 | New /help menu: categories, then commands, then details
 2.17.1 | Staff ranks are always exempt from coin checks; demoting to Member makes them checked again
 2.17.0 | Cleaner, roomier panels everywhere; fixed starting-coins save error, startup ping error and name formatting
 2.16.0 | /mystatus is now /userinfo: full Discord profile plus a clan section for members

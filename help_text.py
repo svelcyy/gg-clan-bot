@@ -15,28 +15,28 @@ class HelpEntry:
 
 
 COMMANDS: list[HelpEntry] = [
-    HelpEntry("/userinfo", "Everyone", False,
+    HelpEntry("/userinfo", "General", False,
               "Someone's Discord info, plus their clan rank and coins",
               "/userinfo  ·  /userinfo user:@1TAP  ·  /userinfo current:15000",
               "Shows their Discord profile (account age, badges, roles, when they joined) and, for clan members, "
               "their Roblox account, rank, Contribution and last coin check. Leave **user** empty for yourself. "
               "Add **current** (your Contribution in game right now) to see how much more you need this month."),
-    HelpEntry("/claninfo", "Everyone", False,
+    HelpEntry("/claninfo", "General", False,
               "About the clan: requirements to join and when signups open",
               "/claninfo",
               "Shows who runs the clan, what you need to join, and when signups are expected to open next "
               "(the 1st of every month). Tip: pinging the bot points people here too."),
-    HelpEntry("/leaderboard", "Everyone", False,
+    HelpEntry("/leaderboard", "General", False,
               "See the latest coin check: everyone's coins and gains",
               "/leaderboard",
               "Shows every member's Discord, Roblox name, total coins and how much they gained, best first. "
               "Switch to A–Z with the menu. Everyone in the channel sees it (set **public** to False for just you)."),
-    HelpEntry("/botinfo", "Everyone", False,
+    HelpEntry("/botinfo", "General", False,
               "Bot stats: uptime, ping, version and latest changes",
               "/botinfo",
               "Shows how long the bot has been online, its ping to Discord, the version it's running, "
               "the roster size, the last coin check and the three most recent changes. Only you see it."),
-    HelpEntry("/help", "Everyone", False,
+    HelpEntry("/help", "General", False,
               "This menu",
               "/help",
               "Pick any command from the menu to see what it does and how to use it."),
@@ -88,7 +88,7 @@ COMMANDS: list[HelpEntry] = [
               "/roster reset confirm:RESET",
               "Can't be undone. Server admins only, and you have to type RESET in capitals."),
 
-    HelpEntry("/coins import", "Coin checks", True,
+    HelpEntry("/coins import", "Coin Checks", True,
               "Import this month's totals, check the preview, then save",
               "/coins import label:Nov 2026  (then paste)  ·  or attach a file",
               "Leave **file** empty and a box opens: paste one `username number` per line "
@@ -100,33 +100,33 @@ COMMANDS: list[HelpEntry] = [
               "except to update a renamed Roblox username.\n"
               "Pick **mode: Starting coins only** to set everyone's starting coins in one go instead "
               "(nothing graded, no check saved)."),
-    HelpEntry("/coins results", "Coin checks", True,
+    HelpEntry("/coins results", "Coin Checks", True,
               "Show the latest coin check again",
               "/coins results",
               "Use the menu to see Everyone, Failed, Passed, Missing, New or Exempt."),
-    HelpEntry("/coins status", "Coin checks", True,
+    HelpEntry("/coins status", "Coin Checks", True,
               "See one member's coin history",
               "/coins status roblox:pramishp4",
               "Shows their starting coins and every check since."),
-    HelpEntry("/coins set", "Coin checks", True,
+    HelpEntry("/coins set", "Coin Checks", True,
               "Fix one member's number in the latest check",
               "/coins set roblox:pramishp4 total:875128",
               "Use this when a number was read wrong. Their result updates straight away."),
-    HelpEntry("/coins minimum", "Coin checks", True,
+    HelpEntry("/coins minimum", "Coin Checks", True,
               "Change the monthly minimum (default 10,000)",
               "/coins minimum amount:10000",
               "Results use the new minimum straight away."),
-    HelpEntry("/coins undo", "Coin checks", True,
+    HelpEntry("/coins undo", "Coin Checks", True,
               "Delete the latest import",
               "/coins undo confirm:Nov 2026",
               "Type the check's name exactly to confirm."),
 
-    HelpEntry("/staffguide", "Bot", True,
+    HelpEntry("/staffguide", "Staff Tools", True,
               "The staff guide: how to add, rank and remove members",
               "/staffguide",
               "A short guide with a page for each job. Pick a page from the menu. "
               "Set **public** to True to show it to the channel."),
-    HelpEntry("/check", "Bot", True,
+    HelpEntry("/check", "Staff Tools", True,
               "Compare the roster with Discord roles and the Roblox group",
               "/check  ·  /check what:Roblox group only",
               "Lists who needs **gg Member** or a Roblox clan role, and who has one but isn't on the roster."),
@@ -150,23 +150,50 @@ COMMANDS: list[HelpEntry] = [
 ADMIN_ONLY = {"/roster rank", "/roster start", "/roster exempt", "/roster reset", "/coins import", "/coins set",
               "/coins minimum", "/coins undo", "/update", "/restart", "/reminders"}
 
-CATEGORY_EMOJI = {"Everyone": "👋", "Roster": "📋", "Coin checks": "🪙", "Bot": "⚙️"}
+# (name, emoji, one line for the menu). Order = order in the menu.
+CATEGORIES = [
+    ("General", "👋", "Clan info, leaderboard, user info and bot stats"),
+    ("Roster", "📋", "Add, remove, link and rank clan members"),
+    ("Coin Checks", "🪙", "Monthly coin check results and history"),
+    ("Staff Tools", "🛡️", "Role checks and the staff guide"),
+    ("Bot", "⚙️", "Updates, restarts and reminders"),
+]
+CATEGORY_EMOJI = {name: emoji for name, emoji, _ in CATEGORIES}
 
 
-def overview() -> str:
-    lines = ["-# Pick a command from the menu below to see how to use it. 🔒 = staff only · 👑 = Clan Manager only",
-             "-# Replies that only you see have a **public** option to show them to everyone.", ""]
-    for cat in CATEGORY_EMOJI:
-        lines.append(f"### {CATEGORY_EMOJI[cat]} {cat}")
-        for c in (c for c in COMMANDS if c.category == cat and c.name != "/help"):
-            mark = " 👑" if c.name in ADMIN_ONLY else " 🔒" if c.staff else ""
-            lines.append(f"`{c.name}`{mark}\n-# {c.short}")
-        lines.append("")
-    return "\n".join(lines).strip()
+def mark(c: HelpEntry) -> str:
+    return " 👑" if c.name in ADMIN_ONLY else " 🔒" if c.staff else ""
+
+
+def in_category(cat: str) -> list[HelpEntry]:
+    return [c for c in COMMANDS if c.category == cat and c.name != "/help"]
+
+
+def home() -> tuple[str, list[tuple[str, str, bool]]]:
+    """The main menu: (description, fields)."""
+    desc = ("`/help` · Shows this menu.\n"
+            "Choose a category from the dropdown to see its commands.")
+    half = (len(CATEGORIES) + 1) // 2
+    col = lambda cats: "\n".join(f"> {e} **{n}** · {len(in_category(n))}" for n, e, _ in cats)
+    fields = [("📚 Categories", col(CATEGORIES[:half]), True),
+              ("\u200b", col(CATEGORIES[half:]), True),
+              ("📖 Guides", "> 📘 Staff Guide · `/staffguide`\n> 🏰 Clan Info · `/claninfo`", False),
+              ("🔑 Key", "> 🔒 Staff only · 👑 Clan Manager only\n"
+                        "> Most private replies have a **public** option to show everyone.", False)]
+    return desc, fields
+
+
+def category_page(cat: str) -> str:
+    desc = next(d for n, _, d in CATEGORIES if n == cat)
+    lines = [f"-# {desc}", ""]
+    for c in in_category(cat):
+        lines += [f"**`{c.name}`**{mark(c)}", f"> {c.short}", ""]
+    lines.append("-# Pick a command below for the details.")
+    return "\n".join(lines)
 
 
 def detail(name: str) -> str:
     c = next(c for c in COMMANDS if c.name == name)
     who = ("👑 Clan Manager only (needs Administrator)" if c.name in ADMIN_ONLY
            else "🔒 Staff only (needs Manage Roles)" if c.staff else "👋 Anyone can use this")
-    return f"-# {CATEGORY_EMOJI[c.category]} {c.category} · {who}\n\n{c.details}\n\n**How to use it**\n`{c.how}`"
+    return f"-# {CATEGORY_EMOJI[c.category]} {c.category} · {who}\n\n{c.details}\n\n**How to use it**\n> `{c.how}`"
