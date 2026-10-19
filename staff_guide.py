@@ -67,7 +67,7 @@ PAGES: list[tuple[str, str, str, str]] = [   # (key, emoji, title, body)
      "• `/roster start` · fixing starting coins\n"
      "• `/roster sync` · fixing everyone's roles at once\n"
      "• `/coins import`, `/coins set`, `/coins undo`, `/coins minimum` · coin checks\n"
-     "• `/update`, `/restart`, `/reminders` · running the bot\n"
+     "• `/status`, `/update`, `/restart`, `/reminders` · running the bot\n"
      "• `/roster reset` · wipes everything\n\n"
      "If a member says their coin check result is wrong, check `/coins status` and pass it on to the Clan Manager."),
     ("quick", "⚡", "Quick Reference",

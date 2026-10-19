@@ -131,8 +131,8 @@ def memory_mb() -> str:
     except OSError:
         pass
     return "—"
-BOT_STATUS = env("BOT_STATUS", "Checking coins...")      # the text under the bot's name
-MOBILE_STATUS = env("MOBILE_STATUS", "on").lower() in ("on", "yes", "true", "1")
+BOT_STATUS = env("BOT_STATUS", "SIGNUPS OPEN!!")      # default text under the bot's name (/status changes it)
+MOBILE_STATUS = env("MOBILE_STATUS", "off").lower() in ("on", "yes", "true", "1")
 GITHUB_REPO = env("GITHUB_REPO", "svelcyy/gg-clan-bot")
 GITHUB_BRANCH = env("GITHUB_BRANCH", "main")
 GITHUB_TOKEN = env("GITHUB_TOKEN")          # only needed if the repository is private
@@ -424,6 +424,11 @@ SHOW_STATUS = env("PRESENCE_INTENT", "off").lower() in ("on", "yes", "true", "1"
 intents.presences = SHOW_STATUS  # "Presence Intent" in the Developer Portal: only turn on after enabling it there
 
 
+def status_activity() -> discord.CustomActivity | None:
+    text = store.get_setting("status", BOT_STATUS)
+    return discord.CustomActivity(name=text) if text else None
+
+
 class ClanBot(discord.Client):
     def __init__(self):
         super().__init__(intents=intents,
@@ -431,7 +436,7 @@ class ClanBot(discord.Client):
                          chunk_guilds_at_startup=False,
                          allowed_mentions=discord.AllowedMentions.none(),  # never pings anyone
                          status=discord.Status.online,
-                         activity=discord.CustomActivity(name=BOT_STATUS) if BOT_STATUS else None)
+                         activity=status_activity())
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
@@ -1473,6 +1478,21 @@ async def update(interaction: discord.Interaction, public: bool = False):
     log.info("Updating v%s -> v%s, restarting", RUNNING_VERSION, new_version)
     await asyncio.sleep(2)
     os.execv(sys.executable, [sys.executable, str(HERE / "main.py")])
+
+
+# ================================================================= /status ===
+
+@bot.tree.command(name="status", description="Change the text under the bot's name")
+@admin_only
+@app_commands.default_permissions(administrator=True)
+@app_commands.guild_only()
+@app_commands.describe(text="New status, e.g. SIGNUPS OPEN!! (leave empty to clear it)")
+async def status_command(interaction: discord.Interaction, text: Optional[app_commands.Range[str, 1, 128]] = None):
+    store.set_setting("status", text or "")
+    await bot.change_presence(status=discord.Status.online, activity=status_activity())
+    await interaction.response.send_message(embed=simple(
+        f"Status is now **{discord.utils.escape_markdown(text)}**." if text else "Status cleared.",
+        GREEN, "🟢 Status Updated"), ephemeral=True)
 
 
 # ================================================================ /restart ===

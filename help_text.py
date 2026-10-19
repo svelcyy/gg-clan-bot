@@ -149,6 +149,11 @@ COMMANDS: list[HelpEntry] = [
               "/restart",
               "Turns the bot off and on again in a few seconds. Handy if something seems stuck, "
               "or when the restart reminder pings you. Also picks up any new update."),
+    HelpEntry("/status", "Bot", True,
+              "Change the text under the bot's name",
+              "/status text:SIGNUPS OPEN!!  ·  /status  (clears it)",
+              "Changes the bot's status straight away and keeps it after restarts. "
+              "Handy for things like signups opening and closing."),
     HelpEntry("/update", "Bot", True,
               "Download the newest bot version and restart",
               "/update",
@@ -156,7 +161,7 @@ COMMANDS: list[HelpEntry] = [
 ]
 
 # Clan Manager commands: need the Administrator permission
-ADMIN_ONLY = {"/roster sync", "/roster rank", "/roster start", "/roster exempt", "/roster reset", "/coins import", "/coins set",
+ADMIN_ONLY = {"/status", "/roster sync", "/roster rank", "/roster start", "/roster exempt", "/roster reset", "/coins import", "/coins set",
               "/coins minimum", "/coins undo", "/update", "/restart", "/reminders"}
 
 # (name, emoji, one line for the menu). Order = order in the menu.
@@ -165,7 +170,7 @@ CATEGORIES = [
     ("Roster", "📋", "Add, remove, link and rank clan members"),
     ("Coin Checks", "🪙", "Monthly coin check results and history"),
     ("Staff Tools", "🛡️", "Role checks and the staff guide"),
-    ("Bot", "⚙️", "Updates, restarts and reminders"),
+    ("Bot", "⚙️", "Status, updates, restarts and reminders"),
 ]
 CATEGORY_EMOJI = {name: emoji for name, emoji, _ in CATEGORIES}
 

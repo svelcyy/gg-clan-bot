@@ -94,6 +94,15 @@ class Store:
         row = self.db.execute("SELECT value FROM settings WHERE key='minimum'").fetchone()
         return int(row["value"]) if row else DEFAULT_MINIMUM
 
+    def get_setting(self, key: str, default: str | None = None) -> str | None:
+        row = self.db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        return row["value"] if row else default
+
+    def set_setting(self, key: str, value: str) -> None:
+        self.db.execute("INSERT INTO settings(key,value) VALUES(?,?) "
+                        "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+        self.db.commit()
+
     def set_minimum(self, amount: int) -> None:
         self.db.execute("INSERT INTO settings(key,value) VALUES('minimum',?) "
                         "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(amount),))

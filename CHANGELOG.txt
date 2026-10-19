@@ -1,4 +1,5 @@
 # Newest first. Format: version | what changed
+2.21.0 | Normal green online dot, new /status command, status set to SIGNUPS OPEN!!
 2.20.0 | New /roster sync: checks and fixes everyone's Discord and Roblox group roles in one go
 2.19.0 | Staff get Clan Member plus their staff role in the Roblox group
 2.18.2 | Removed join request handling and wording (the group has no join requests)
