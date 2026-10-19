@@ -357,7 +357,7 @@ roster_group = app_commands.Group(name="roster", description="Manage the clan ro
 
 @roster_group.command(name="add", description="Add someone to the clan roster with their starting coins")
 @app_commands.describe(roblox="Their Roblox username (the @ name)", discord_user="Their Discord account",
-                       coins="Their Contribution number in game right now (their starting point)",
+                       coins="Their Contribution number in game right now (their starting point). Leave empty for 0",
                        rank="Clan rank (default Member)", exempt="Skip them in coin checks?", notes="Optional note")
 @app_commands.choices(rank=RANK_CHOICES)
 async def roster_add(interaction: discord.Interaction, roblox: str, discord_user: Optional[discord.User] = None,
@@ -379,17 +379,18 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
     if discord_user and store.discord_id_owner(discord_user.id):
         notes_out.append(f"That Discord account is also linked to {', '.join(store.discord_id_owner(discord_user.id))}.")
     rank_name = rank.value if rank else "Member"
+    coins_given = coins is not None
+    coins = coins if coins_given else 0   # no number given: start from 0
     if not store.add_member(name, rid, discord_user.id if discord_user else None, rank_name, exempt, notes, coins):
         await interaction.followup.send(embed=simple(f"**{name}** is already on the roster.", AMBER))
         return
     roles = await sync_roles(interaction.guild, discord_user.id if discord_user else None, rank_name)
     group = await sync_group(name, rid, rank_name)
-    desc = ("Their next coin check will measure from their starting coins." if coins is not None else
-            "No starting coins yet, so their first coin check will be their starting point. "
-            "Set it now with `/roster start`.")
+    desc = ("Their next coin check will measure from their starting coins." if coins_given else
+            "No coins given, so they start from **0**. Change it any time with `/roster start`.")
     info = [("Rank", rank_name + (" · 🛡️ Exempt" if exempt else ""), True),
             ("Discord", discord_user.mention if discord_user else "Not linked", True),
-            ("Starting Coins", f"{coins:,}" if coins is not None else "Not set", True)]
+            ("Starting Coins", f"{coins:,}" + ("" if coins_given else " (default)"), True)]
     footer = f"Roster: {len(store.members())}/100"
     await interaction.followup.send(embed=update_embed(
         f"✅ Added {name}", desc, fields=info, discord_roles=roles, group=group, notes=notes_out, footer=footer),
