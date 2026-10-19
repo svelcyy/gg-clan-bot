@@ -1,0 +1,11 @@
+# Newest first. Format: version | what changed
+2.5.0 | /update is now private to you, and shows real version numbers with what's new
+2.4.3 | "Checking coins..." status and the mobile (phone) icon
+2.4.2 | /roster add: starting coins default to 0 when left empty
+2.4.1 | Coin imports: paste-in box, private preview with Save/Cancel, renamed Roblox accounts matched automatically
+2.4.0 | Tidier replies, private /roster add, rank and remove with no-ping log cards
+2.3.1 | Roblox group roles follow clan rank
+2.3.0 | Discord roles follow clan rank, and the /help menu
+2.2.0 | Fresh start: starting coins, /roster start and /roster reset
+2.1.0 | Leaderboard-style lists with a menu and pages
+2.0.0 | Coin checks, roster commands, /mystatus and /check

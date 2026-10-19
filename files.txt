@@ -7,3 +7,5 @@ reports.py
 roblox.py
 requirements.txt
 help_text.py
+VERSION
+CHANGELOG.txt

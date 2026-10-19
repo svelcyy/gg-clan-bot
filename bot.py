@@ -74,6 +74,34 @@ WEEKLY_CHECK = env("WEEKLY_CHECK", "on").lower() in ("on", "yes", "true", "1")
 REPORT_WEEKDAY = env("REPORT_WEEKDAY", "sunday").lower()
 REPORT_HOUR_UTC = int(env("REPORT_HOUR_UTC", "17"))
 DB_PATH = env("DB_PATH", str(HERE / "clan.db"))
+def read_version() -> str:
+    try:
+        return (HERE / "VERSION").read_text().strip() or "?"
+    except OSError:
+        return "?"
+
+
+def version_key(v: str) -> tuple:
+    return tuple(int(p) if p.isdigit() else 0 for p in v.split("."))
+
+
+def changes_since(old: str, new: str) -> list[tuple[str, str]]:
+    """[(version, what changed)] for versions newer than old, up to new, newest first."""
+    out = []
+    try:
+        lines = (HERE / "CHANGELOG.txt").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        if "|" not in line or line.startswith("#"):
+            continue
+        v, text = (p.strip() for p in line.split("|", 1))
+        if version_key(old) < version_key(v) <= version_key(new):
+            out.append((v, text))
+    return out
+
+
+RUNNING_VERSION = read_version()   # the version this process started with
 BOT_STATUS = env("BOT_STATUS", "Checking coins...")      # the text under the bot's name
 MOBILE_STATUS = env("MOBILE_STATUS", "on").lower() in ("on", "yes", "true", "1")
 GITHUB_REPO = env("GITHUB_REPO", "svelcyy/gg-clan-bot")
@@ -788,7 +816,7 @@ class HelpMenu(discord.ui.Select):
         for o in self.options:
             o.default = o.value == choice
         if choice == "__overview":
-            embed = discord.Embed(title="📖 [gg] bot commands", description=help_text.overview(), color=reports.BLURPLE)
+            embed = discord.Embed(title="📖 [gg] Bot Commands", description=help_text.overview(), color=reports.BLURPLE)
         else:
             embed = discord.Embed(title=choice, description=help_text.detail(choice), color=reports.BLURPLE)
         await interaction.response.edit_message(embed=embed, view=self.view)
@@ -803,7 +831,8 @@ class HelpView(discord.ui.View):
 @bot.tree.command(name="help", description="See every command and how to use it")
 @app_commands.guild_only()
 async def help_command(interaction: discord.Interaction):
-    embed = discord.Embed(title="📖 [gg] bot commands", description=help_text.overview(), color=reports.BLURPLE)
+    embed = discord.Embed(title="📖 [gg] Bot Commands", description=help_text.overview(), color=reports.BLURPLE)
+    embed.set_footer(text=f"[gg] bot v{RUNNING_VERSION}")
     await interaction.response.send_message(embed=embed, view=HelpView(), ephemeral=True)
 
 
@@ -825,32 +854,33 @@ async def mystatus(interaction: discord.Interaction, current: Optional[app_comma
 
 # ================================================================= /update ===
 
-@bot.tree.command(name="update", description="Download the newest bot code from GitHub and restart")
+@bot.tree.command(name="update", description="Download the newest bot version and restart")
 @app_commands.default_permissions(manage_roles=True)
 @app_commands.guild_only()
 async def update(interaction: discord.Interaction):
-    if not GITHUB_REPO:
-        await interaction.response.send_message(embed=simple(
-            "Updates aren't set up yet. Add a `GITHUB_REPO` setting (like `yourname/gg-clan-bot`) "
-            "on Wispbyte's Environment page.", AMBER), ephemeral=True)
-        return
-    await interaction.response.defer(thinking=True)
+    await interaction.response.defer(ephemeral=True, thinking=True)   # only you see this
     try:
         result = await asyncio.to_thread(updater.sync, GITHUB_REPO, GITHUB_BRANCH, GITHUB_TOKEN)
     except Exception as e:
         log.exception("Update failed")
         await interaction.followup.send(embed=simple(
-            f"Couldn't download the update, so nothing changed and the bot keeps running.\n`{e}`", RED, "⚠️ Update failed"))
+            f"Couldn't download the update, so nothing changed and the bot keeps running.\n`{e}`",
+            RED, "⚠️ Update Failed"), ephemeral=True)
         return
+    new_version = read_version()
     if not result.changed:
         await interaction.followup.send(embed=simple(
-            f"Already running the newest version (`{result.new_sha[:7]}`).", GREEN, "✅ Up to date"))
+            f"You're on the newest version, **v{RUNNING_VERSION}**.", GREEN, "✅ Up to Date"), ephemeral=True)
         return
-    e = simple(f"**{result.message or 'New version'}**\n\nRestarting now, back in a few seconds.", GREEN, "⬆️ Updating")
-    e.add_field(name="Changed files", value=", ".join(f"`{f}`" for f in result.changed)[:1024], inline=False)
-    e.add_field(name="Version", value=f"`{result.old_sha[:7]}` → `{result.new_sha[:7]}`", inline=False)
-    await interaction.followup.send(embed=e)
-    log.info("Updated to %s, restarting", result.new_sha[:7])
+    e = discord.Embed(title=f"⬆️ Updating to v{new_version}", color=GREEN,
+                      description="Restarting now. Back in a few seconds.")
+    e.add_field(name="Current", value=f"v{RUNNING_VERSION}", inline=True)
+    e.add_field(name="New", value=f"v{new_version}", inline=True)
+    news = changes_since(RUNNING_VERSION, new_version)
+    if news:
+        e.add_field(name="What's New", value="\n".join(f"**v{v}** · {t}" for v, t in news[:8])[:1024], inline=False)
+    await interaction.followup.send(embed=e, ephemeral=True)
+    log.info("Updating v%s -> v%s, restarting", RUNNING_VERSION, new_version)
     await asyncio.sleep(2)
     os.execv(sys.executable, [sys.executable, str(HERE / "main.py")])
 
@@ -924,7 +954,7 @@ async def _wait_ready():
 
 
 def run():
-    log.info("Starting bot, code version %s", updater.current_version()[:7])
+    log.info("Starting [gg] bot v%s", RUNNING_VERSION)
     bot.run(TOKEN, log_handler=None)
 
 
