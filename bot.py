@@ -58,7 +58,7 @@ WEEKLY_CHECK = env("WEEKLY_CHECK", "on").lower() in ("on", "yes", "true", "1")
 REPORT_WEEKDAY = env("REPORT_WEEKDAY", "sunday").lower()
 REPORT_HOUR_UTC = int(env("REPORT_HOUR_UTC", "17"))
 DB_PATH = env("DB_PATH", str(HERE / "clan.db"))
-GITHUB_REPO = env("GITHUB_REPO")            # e.g. yourname/gg-clan-bot
+GITHUB_REPO = env("GITHUB_REPO", "svelcyy/gg-clan-bot")
 GITHUB_BRANCH = env("GITHUB_BRANCH", "main")
 GITHUB_TOKEN = env("GITHUB_TOKEN")          # only needed if the repository is private
 
