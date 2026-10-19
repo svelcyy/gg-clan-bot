@@ -124,19 +124,11 @@ class GroupManager:
         """Put the user in the right clan role. rank=None means they left the clan."""
         if not self.roles:
             await self.load_roles(session)
-        joined = False
         mem = await self.membership(session, user_id)
-        if mem is None and rank is not None:
-            try:  # they may have a pending join request
-                await self._call(session, "POST", f"/groups/{self.group}/join-requests/{user_id}:accept", json={})
-                joined = True
-                mem = await self.membership(session, user_id)
-            except CloudError as e:
-                if e.status in (400, 404):
-                    return "Not in the group yet. Ask them to request to join, then run `/roster rank` to finish."
-                raise
         if mem is None:
-            return "Not in the group, so nothing was changed."
+            return ("Not in the Roblox group yet, so their group role wasn't set. "
+                    "Once they're in the group, run `/check` to see who still needs a role." if rank is not None
+                    else "Not in the Roblox group, so nothing was changed.")
         current = {int(r.split("/")[-1]) for r in (mem.get("roles") or [mem.get("role")]) if r}
         wanted = self.role_id(self.role_names.get(rank, "")) if rank else None
         managed = {i for i in (self.role_id(n) for n in self.role_names.values() if n) if i}
@@ -157,7 +149,7 @@ class GroupManager:
             except CloudError as e:
                 if e.status not in (400, 404):  # already gone (e.g. the new role replaced it)
                     raise
-        parts = ["✅ Accepted their join request"] if joined else []
+        parts = []
         if add:
             parts.append("➕ " + ", ".join(names.get(r, str(r)) for r in add))
         if remove:

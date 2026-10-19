@@ -23,9 +23,9 @@ PAGES: list[tuple[str, str, str, str]] = [   # (key, emoji, title, body)
      "**What happens:**\n"
      "1. The bot checks the Roblox account is real.\n"
      "2. Discord: they get **gg Member** plus their rank's role.\n"
-     "3. Roblox group: their join request is accepted (if sent) and they get their rank's role.\n"
+     "3. Roblox group: they get their rank's role (they need to be in the group already).\n"
      "4. You get a private summary, and a **New Clan Member** card goes to the roster log.\n\n"
-     "Read the summary: if something couldn't be done (for example no join request yet), it says so. "
+     "Read the summary: if something couldn't be done (for example they're not in the Roblox group yet), it says so. "
      "Get **coins** right, since their first coin check measures from it. If it's wrong, tell the Clan Manager."),
     ("change", "✏️", "Changing a Member",
      "**`/roster link`** · Add or change someone's Discord account. Also gives them the right roles.\n"

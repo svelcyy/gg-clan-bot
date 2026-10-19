@@ -1,4 +1,5 @@
 # Newest first. Format: version | what changed
+2.18.2 | Removed join request handling and wording (the group has no join requests)
 2.18.1 | Wording tidy-up in /help
 2.18.0 | New /help menu: categories, then commands, then details
 2.17.1 | Staff ranks are always exempt from coin checks; demoting to Member makes them checked again

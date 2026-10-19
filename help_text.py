@@ -46,7 +46,7 @@ COMMANDS: list[HelpEntry] = [
               "/roster add roblox:pramishp4 discord_user:@1TAP coins:863128 rank:Member",
               "Checks the Roblox name is real, saves their Discord account and starting coins, "
               "gives them **gg Member** plus their rank's role in Discord, and sets their **Roblox group** role "
-              "(accepting their join request if they've sent one).\n"
+              "(if they're already in the group).\n"
               "**coins** is their Contribution number right now (leave it empty for 0). Their next coin check measures from it.\n"
               "Only you see the reply. A 🆕 New Clan Member card (no pings) goes to the roster log channel."),
     HelpEntry("/roster rank", "Roster", True,
