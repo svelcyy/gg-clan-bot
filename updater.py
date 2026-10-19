@@ -1,18 +1,21 @@
 """Keeps the bot's code in sync with its GitHub repository.
 
 How it works:
-  1. Ask GitHub for the newest commit on the branch (one API call).
-  2. Read files.txt from that commit: the list of code files to keep in sync.
-  3. Download each file from that exact commit and replace the local copy.
+  1. Download the repository as a .zip from github.com (the normal "Download ZIP" link).
+     This is NOT GitHub's API, so it isn't limited to 60 checks an hour, which matters on
+     free hosts where many bots share one internet address.
+  2. Read files.txt inside the zip: the list of code files to keep in sync.
+  3. Replace only those files. Never touches .env, clan.db, or anything else.
 
-It never touches .env, clan.db, or anything not listed in files.txt.
 Only uses the Python standard library, so it works even before packages are installed.
 """
 from __future__ import annotations
 
-import json
+import io
 import os
+import time
 import urllib.request
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -29,15 +32,7 @@ class SyncResult:
 
     @property
     def updated(self) -> bool:
-        return self.old_sha != self.new_sha or bool(self.changed)
-
-
-def _request(url: str, token: str | None, accept: str = "application/vnd.github+json") -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "gg-clan-bot-updater", "Accept": accept})
-    if token:
-        req.add_header("Authorization", f"Bearer {token}")
-    with urllib.request.urlopen(req, timeout=20) as r:
-        return r.read()
+        return bool(self.changed)
 
 
 def current_version(dest: Path = HERE) -> str:
@@ -47,31 +42,45 @@ def current_version(dest: Path = HERE) -> str:
         return "unknown"
 
 
-def sync(repo: str, branch: str = "main", token: str | None = None, dest: Path = HERE) -> SyncResult:
-    """Download the newest code. Raises on network/GitHub errors (callers decide what to do)."""
-    commit = json.loads(_request(f"https://api.github.com/repos/{repo}/commits/{branch}", token))
-    sha = commit["sha"]
-    message = commit.get("commit", {}).get("message", "").split("\n")[0]
+def _download_zip(repo: str, branch: str, token: str | None) -> bytes:
+    # cache-buster so a just-pushed change isn't served from a stale cache
+    url = f"https://github.com/{repo}/archive/refs/heads/{branch}.zip?t={int(time.time())}"
+    req = urllib.request.Request(url, headers={"User-Agent": "gg-clan-bot-updater"})
+    if token:  # private repositories
+        req = urllib.request.Request(f"https://api.github.com/repos/{repo}/zipball/{branch}",
+                                     headers={"User-Agent": "gg-clan-bot-updater",
+                                              "Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return r.read()
+
+
+def apply_zip(data: bytes, dest: Path = HERE) -> SyncResult:
+    """Install the code files from a GitHub zip. Separate from the download so it can be tested."""
+    zf = zipfile.ZipFile(io.BytesIO(data))
+    sha = zf.comment.decode(errors="ignore").strip() or "unknown"  # GitHub puts the commit id here
+    root = zf.namelist()[0].split("/")[0]                           # e.g. gg-clan-bot-main/
+
+    def read(name: str) -> bytes:
+        return zf.read(f"{root}/{name}")
+
+    files = [l.strip() for l in read("files.txt").decode().splitlines() if l.strip() and not l.startswith("#")]
     old = current_version(dest)
-
-    def fetch(path: str) -> bytes:
-        # contents API at a fixed commit: never stale, works for private repos with a token
-        return _request(f"https://api.github.com/repos/{repo}/contents/{path}?ref={sha}", token,
-                        accept="application/vnd.github.raw")
-
-    files = [l.strip() for l in fetch("files.txt").decode().splitlines()
-             if l.strip() and not l.startswith("#")]
     changed = []
     for name in files:
         if name in PROTECTED or "/" in name or "\\" in name or name.startswith("."):
             continue  # safety: only plain files in the bot folder, never secrets or data
-        data = fetch(name)
+        new = read(name)
         target = dest / name
-        if target.exists() and target.read_bytes() == data:
+        if target.exists() and target.read_bytes() == new:
             continue
-        tmp = target.with_suffix(target.suffix + ".new")
-        tmp.write_bytes(data)
+        tmp = target.with_name(target.name + ".new")
+        tmp.write_bytes(new)
         os.replace(tmp, target)
         changed.append(name)
     (dest / ".version").write_text(sha)
-    return SyncResult(old, sha, message, changed)
+    return SyncResult(old, sha, "", changed)
+
+
+def sync(repo: str, branch: str = "main", token: str | None = None, dest: Path = HERE) -> SyncResult:
+    """Download and install the newest code. Raises on network/GitHub errors."""
+    return apply_zip(_download_zip(repo, branch, token), dest)

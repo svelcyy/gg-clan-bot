@@ -22,6 +22,7 @@ import updater  # noqa: E402
 
 repo = os.getenv("GITHUB_REPO") or "svelcyy/gg-clan-bot"
 if repo and os.getenv("AUTO_UPDATE", "on").lower() not in ("off", "no", "false", "0"):
+    print(f"[updater] Checking GitHub ({repo}) for the newest code…", flush=True)
     try:
         result = updater.sync(repo, os.getenv("GITHUB_BRANCH", "main"), os.getenv("GITHUB_TOKEN"))
         if result.changed:
