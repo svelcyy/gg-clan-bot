@@ -510,6 +510,12 @@ roster_group = app_commands.Group(name="roster", description="Manage the clan ro
 async def roster_add(interaction: discord.Interaction, roblox: str, discord_user: Optional[discord.User] = None,
                      coins: Optional[app_commands.Range[int, 0]] = None,
                      rank: Optional[app_commands.Choice[str]] = None, exempt: bool = False, notes: str = "", public: bool = False):
+    perms = getattr(interaction.user, "guild_permissions", None)
+    if not (perms and perms.administrator) and ((rank and rank.value != "Member") or exempt):
+        await interaction.response.send_message(embed=simple(
+            "🔒 Only the Clan Manager can add someone as staff or as exempt. "
+            "Add them as a Member, and ask the Clan Manager to change their rank.", RED), ephemeral=True)
+        return
     await interaction.response.defer(ephemeral=not public)  # only the person who ran it sees the reply
     name, rid, notes_out = roblox.strip().lstrip("@"), None, []
     try:
