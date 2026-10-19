@@ -958,7 +958,11 @@ async def help_command(interaction: discord.Interaction, public: bool = False):
 
 # =============================================================== /claninfo ===
 
-CLAN_FOOTER = env("CLAN_FOOTER", "")   # the clan's in-game stats, shown at the bottom of /claninfo
+# The clan's in-game stats, shown at the bottom of /claninfo. Use \n in CLAN_FOOTER for a new line.
+CLAN_FOOTER = (env("CLAN_FOOTER") or
+               "🪙 123,143,863 Coins · 💎 18,250 Crystals\n"
+               "Clan Level 10 · Battle Pass XP Lv. 50 (Max) · Member Cap Lv. 18\n"
+               "Shop Lv. 4 · Clan Emblem Lv. 1 · Crate Altar Lv. 1").replace("\\n", "\n")
 
 
 def next_signups() -> dt.datetime:
@@ -982,8 +986,7 @@ def claninfo_embed() -> discord.Embed:
     guild = bot.get_guild(GUILD_ID)
     if guild and guild.icon:
         e.set_thumbnail(url=guild.icon.url)
-    members = [m for m in store.members() if m.roblox_username.lower() != "ggclanholder"]
-    e.set_footer(text=CLAN_FOOTER or f"{len(members)} members")
+    e.set_footer(text=CLAN_FOOTER)
     return e
 
 

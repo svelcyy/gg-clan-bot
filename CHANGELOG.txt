@@ -1,4 +1,5 @@
 # Newest first. Format: version | what changed
+2.13.1 | Clan stats in the /claninfo footer
 2.13.0 | New /claninfo, and the bot answers when someone pings it
 2.12.0 | public option on private replies; /leaderboard is public by default; anyone can browse a shared board privately
 2.11.2 | Boards show Discord @handles instead of display names
