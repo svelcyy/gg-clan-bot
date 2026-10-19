@@ -20,7 +20,7 @@ except ImportError:
 
 import updater  # noqa: E402
 
-repo = os.getenv("GITHUB_REPO")
+repo = os.getenv("GITHUB_REPO") or "svelcyy/gg-clan-bot"
 if repo and os.getenv("AUTO_UPDATE", "on").lower() not in ("off", "no", "false", "0"):
     try:
         result = updater.sync(repo, os.getenv("GITHUB_BRANCH", "main"), os.getenv("GITHUB_TOKEN"))
@@ -33,6 +33,11 @@ if repo and os.getenv("AUTO_UPDATE", "on").lower() not in ("off", "no", "false",
             print(f"[updater] Code is up to date ({result.new_sha[:7]})", flush=True)
     except Exception as e:
         print(f"[updater] Couldn't check GitHub ({e}). Starting with the current code.", flush=True)
+
+if not (HERE / "bot.py").exists():
+    print("[updater] bot.py is missing and couldn't be downloaded. Check the line above for why "
+          "(usually GitHub couldn't be reached). Restart to try again.", flush=True)
+    sys.exit(1)
 
 import bot  # noqa: E402
 
