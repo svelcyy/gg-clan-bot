@@ -1,0 +1,6 @@
+.env
+clan.db
+.version
+__pycache__/
+*.new
+seed_*.csv

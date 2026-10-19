@@ -1,0 +1,8 @@
+# Files the bot keeps in sync with GitHub. Never list .env or clan.db here.
+main.py
+bot.py
+updater.py
+storage.py
+reports.py
+roblox.py
+requirements.txt
