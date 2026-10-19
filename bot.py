@@ -435,9 +435,10 @@ async def roster_reset(interaction: discord.Interaction, confirm: str):
 async def roster_remove(interaction: discord.Interaction, roblox: str, keep_roles: bool = False):
     m = store.get_member(roblox)
     if not m:
-        await interaction.response.send_message(embed=simple(f"**{roblox}** isn't on the roster.", AMBER))
+        await interaction.response.send_message(embed=simple(f"**{roblox}** isn't on the roster.", AMBER),
+                                                ephemeral=True)
         return
-    await interaction.response.defer()
+    await interaction.response.defer(ephemeral=True)  # only the person who ran it sees the reply
     store.remove_member(roblox)
     others = [o for o in store.discord_id_owner(m.discord_id)] if m.discord_id else []
     if keep_roles:
@@ -446,9 +447,16 @@ async def roster_remove(interaction: discord.Interaction, roblox: str, keep_role
         roles = (f"Kept, because that account is still on the roster as {', '.join(others)}." if others
                  else await sync_roles(interaction.guild, m.discord_id, None))
         group = await sync_group(m.roblox_username, m.roblox_id, None)
+    footer = f"Roster: {len(store.members())}/100"
     await interaction.followup.send(embed=update_embed(
         f"🗑️ Removed {m.roblox_username}", "Their coin history is kept.", discord_roles=roles, group=group,
-        footer=f"Roster: {len(store.members())}/100"))
+        footer=footer), ephemeral=True)
+    alert = update_embed(f"👋 Left the Clan: {m.roblox_username}", f"Removed by {interaction.user.mention}.",
+                         color=RED, fields=[("Rank", m.rank, True),
+                                            ("Discord", f"<@{m.discord_id}>" if m.discord_id else "Not linked", True)],
+                         footer=footer)
+    alert.timestamp = discord.utils.utcnow()
+    await post_alert(alert)
 
 
 @roster_group.command(name="link", description="Link a member's Discord account")
@@ -483,15 +491,26 @@ async def roster_exempt(interaction: discord.Interaction, roblox: str, exempt: b
 @app_commands.autocomplete(roblox=roster_autocomplete)
 @app_commands.choices(rank=RANK_CHOICES)
 async def roster_rank(interaction: discord.Interaction, roblox: str, rank: app_commands.Choice[str]):
-    if not store.update_member(roblox, rank=rank.value):
-        await interaction.response.send_message(embed=simple(f"**{roblox}** isn't on the roster.", AMBER))
+    before = store.get_member(roblox)
+    if not before or not store.update_member(roblox, rank=rank.value):
+        await interaction.response.send_message(embed=simple(f"**{roblox}** isn't on the roster.", AMBER),
+                                                ephemeral=True)
         return
-    await interaction.response.defer()
+    await interaction.response.defer(ephemeral=True)  # only the person who ran it sees the reply
     m = store.get_member(roblox)
     roles = await sync_roles(interaction.guild, m.discord_id, rank.value)
     group = await sync_group(m.roblox_username, m.roblox_id, rank.value)
     await interaction.followup.send(embed=update_embed(
-        f"🎖️ {m.roblox_username} is now {rank.value}", discord_roles=roles, group=group))
+        f"🎖️ {m.roblox_username} is now {rank.value}", discord_roles=roles, group=group), ephemeral=True)
+    if before.rank != rank.value:
+        old_i = RANKS.index(before.rank) if before.rank in RANKS else len(RANKS)
+        promoted = RANKS.index(rank.value) < old_i   # RANKS goes Leader, Admin, Officer, Member
+        alert = update_embed(f"{'⬆️ Promoted' if promoted else '⬇️ Demoted'}: {m.roblox_username}",
+                             f"Changed by {interaction.user.mention}.", color=GREEN if promoted else AMBER,
+                             fields=[("Rank", f"{before.rank} → **{rank.value}**", True),
+                                     ("Discord", f"<@{m.discord_id}>" if m.discord_id else "Not linked", True)])
+        alert.timestamp = discord.utils.utcnow()
+        await post_alert(alert)
 
 
 @roster_group.command(name="note", description="Set a note on a member (leave empty to clear)")

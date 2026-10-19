@@ -36,7 +36,8 @@ COMMANDS: list[HelpEntry] = [
     HelpEntry("/roster rank", "Roster", True,
               "Change someone's clan rank (and their Discord role)",
               "/roster rank roblox:zayn rank:Officer",
-              "Updates the roster and swaps their Discord rank role and Roblox group role to match."),
+              "Updates the roster and swaps their Discord rank role and Roblox group role to match. "
+              "Only you see the reply. A ⬆️ Promoted / ⬇️ Demoted card (no pings) goes to the roster log channel."),
     HelpEntry("/roster link", "Roster", True,
               "Link or change someone's Discord account",
               "/roster link roblox:pramishp4 discord_user:@1TAP",
@@ -47,7 +48,8 @@ COMMANDS: list[HelpEntry] = [
               "/roster remove roblox:pramishp4",
               "Removes them from the roster, takes away **gg Member** and their rank role in Discord, "
               "and drops them to the basic role in the Roblox group. "
-              "Set **keep_roles** to True to leave their roles alone. Their coin history is kept."),
+              "Set **keep_roles** to True to leave their roles alone. Their coin history is kept. "
+              "Only you see the reply. A 👋 Left the Clan card (no pings) goes to the roster log channel."),
     HelpEntry("/roster start", "Roster", True,
               "Set or fix someone's starting coins",
               "/roster start roblox:pramishp4 coins:863128",
