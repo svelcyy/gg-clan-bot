@@ -102,6 +102,29 @@ def changes_since(old: str, new: str) -> list[tuple[str, str]]:
 
 
 RUNNING_VERSION = read_version()   # the version this process started with
+STARTED_AT = dt.datetime.now(dt.timezone.utc)
+
+
+def nice_duration(seconds: float) -> str:
+    seconds = int(seconds)
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes = rem // 60
+    parts = [f"{days}d"] if days else []
+    if hours or days:
+        parts.append(f"{hours}h")
+    parts.append(f"{minutes}m")
+    return " ".join(parts)
+
+
+def memory_mb() -> str:
+    try:  # Linux hosts like Wispbyte
+        for line in open("/proc/self/status"):
+            if line.startswith("VmRSS:"):
+                return f"{int(line.split()[1]) / 1024:.0f} MB"
+    except OSError:
+        pass
+    return "—"
 BOT_STATUS = env("BOT_STATUS", "Checking coins...")      # the text under the bot's name
 MOBILE_STATUS = env("MOBILE_STATUS", "on").lower() in ("on", "yes", "true", "1")
 GITHUB_REPO = env("GITHUB_REPO", "svelcyy/gg-clan-bot")
@@ -836,6 +859,33 @@ async def help_command(interaction: discord.Interaction):
     embed = discord.Embed(title="📖 [gg] Bot Commands", description=help_text.overview(), color=reports.BLURPLE)
     embed.set_footer(text=f"[gg] bot v{RUNNING_VERSION}")
     await interaction.response.send_message(embed=embed, view=HelpView(), ephemeral=True)
+
+
+# ================================================================ /botinfo ===
+
+@bot.tree.command(name="botinfo", description="Bot stats: uptime, ping, version and latest changes")
+@app_commands.guild_only()
+async def botinfo(interaction: discord.Interaction):
+    ping = round(bot.latency * 1000)
+    ping_dot = "🟢" if ping < 150 else "🟡" if ping < 400 else "🔴"
+    members = store.members()
+    latest = store.latest_check_id()
+    e = discord.Embed(title="🤖 [gg] Bot", color=reports.BLURPLE,
+                      description=f"-# Online since <t:{int(STARTED_AT.timestamp())}:f>")
+    e.add_field(name="Version", value=f"v{RUNNING_VERSION}", inline=True)
+    e.add_field(name="Uptime", value=nice_duration((dt.datetime.now(dt.timezone.utc) - STARTED_AT).total_seconds()),
+                inline=True)
+    e.add_field(name="Ping", value=f"{ping_dot} {ping} ms", inline=True)
+    e.add_field(name="Roster", value=f"{len(members)}/100 members", inline=True)
+    e.add_field(name="Last Coin Check", value=store.check_label(latest) if latest else "None yet", inline=True)
+    e.add_field(name="Memory", value=memory_mb(), inline=True)
+    news = changes_since("0", RUNNING_VERSION)[:3]
+    if news:
+        e.add_field(name="Latest Changes", value="\n".join(f"**v{v}** · {t}" for v, t in news)[:1024], inline=False)
+    if bot.user and bot.user.display_avatar:
+        e.set_thumbnail(url=bot.user.display_avatar.url)
+    e.set_footer(text=f"discord.py {discord.__version__} · Python {sys.version.split()[0]}")
+    await interaction.response.send_message(embed=e, ephemeral=True)
 
 
 # ============================================================== /mystatus ===

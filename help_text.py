@@ -20,6 +20,11 @@ COMMANDS: list[HelpEntry] = [
               "/mystatus  ·  /mystatus current:15000",
               "Only you can see the answer. Add **current** (your Contribution number in game right now) "
               "and it tells you how much more you need this month."),
+    HelpEntry("/botinfo", "Everyone", False,
+              "Bot stats: uptime, ping, version and latest changes",
+              "/botinfo",
+              "Shows how long the bot has been online, its ping to Discord, the version it's running, "
+              "the roster size, the last coin check and the three most recent changes. Only you see it."),
     HelpEntry("/help", "Everyone", False,
               "This menu",
               "/help",
