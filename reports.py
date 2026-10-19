@@ -1,7 +1,15 @@
-"""Turns data into pages for the bot's embeds. No Discord code, so it can be tested on its own.
+"""Turns data into leaderboard-style lists for the bot's embeds.
 
-Every report is a list of Page objects. The bot shows one page at a time with
-◀ ▶ buttons and a menu to jump between sections.
+No Discord code in here, so it can be tested on its own.
+
+A Board is one embed with several lists the viewer can switch between (a menu),
+each list split into pages of 12 people:
+
+    Page 1/7 • Showing 12 of 70 members
+    -# Compared with 18 Oct 2026 · minimum 10,000
+
+    🥇 **pramishp4** · +12,000 ✅
+    -# 863,128 → 875,128 · Member
 """
 from __future__ import annotations
 
@@ -9,197 +17,239 @@ from dataclasses import dataclass, field
 
 from storage import Member, Result
 
-PER_PAGE = 15
+PER_PAGE = 12
+MEDALS = ["🥇", "🥈", "🥉"]
 
 # embed colours
 BLURPLE, GREEN, RED, AMBER, PURPLE, GREY = 0x5865F2, 0x2ECC71, 0xE74C3C, 0xF1C40F, 0x9B59B6, 0x95A5A6
-
-
-@dataclass
-class Page:
-    title: str
-    section: str
-    lines: list[str] = field(default_factory=list)
-    color: int = BLURPLE
-    fields: list[tuple[str, str, bool]] = field(default_factory=list)  # (name, value, inline)
-    note: str = ""  # small text shown under the list
 
 
 def n(x: int | None) -> str:
     return "—" if x is None else f"{x:,}"
 
 
-def section_pages(title: str, section: str, items: list[str], color: int, empty: str = "Nobody here.",
-                  note: str = "") -> list[Page]:
-    """Split a long list into pages of PER_PAGE lines."""
-    head = f"{section} ({len(items)})"
-    if not items:
-        return [Page(title, head, [empty], color, note=note)]
-    return [Page(title, head, items[i:i + PER_PAGE], color, note=note) for i in range(0, len(items), PER_PAGE)]
+@dataclass
+class Entry:
+    main: str        # bold line, e.g. "**pramishp4** · +12,000 ✅"
+    sub: str = ""    # small grey line underneath
 
 
-def total_chars(pages: list[Page]) -> int:
-    return max(sum(len(l) + 1 for l in p.lines) + sum(len(a) + len(b) for a, b, _ in p.fields) for p in pages)
+@dataclass
+class ListView:
+    label: str                 # name in the menu, e.g. "❌ Failed"
+    entries: list[Entry]
+    ranked: bool = False       # medals for the top 3 instead of 1. 2. 3.
+    empty: str = "Nobody here 🎉"
+
+
+@dataclass
+class Board:
+    title: str
+    header: str                      # one small line under the page counter
+    lists: list[ListView]
+    color: int = BLURPLE
+    noun: str = "members"
+    csv_text: str | None = None      # offered behind a "Spreadsheet" button
+
+    def page_count(self, list_index: int) -> int:
+        return max(1, -(-len(self.lists[list_index].entries) // PER_PAGE))
+
+    def render(self, list_index: int, page: int) -> str:
+        lv = self.lists[list_index]
+        total = len(lv.entries)
+        pages = self.page_count(list_index)
+        page = max(0, min(page, pages - 1))
+        chunk = lv.entries[page * PER_PAGE:(page + 1) * PER_PAGE]
+        top = f"Page {page + 1}/{pages} • Showing {len(chunk)} of {total} {self.noun}"
+        if len(self.lists) > 1:
+            top = f"**{lv.label}**\n" + top
+        lines = [top]
+        if self.header:
+            lines.append(f"-# {self.header}")
+        lines.append("")
+        if not chunk:
+            lines.append(lv.empty)
+        for i, e in enumerate(chunk, start=page * PER_PAGE):
+            prefix = MEDALS[i] if lv.ranked and i < 3 else f"{i + 1}."
+            lines.append(f"{prefix} {e.main}")
+            if e.sub:
+                lines.append(f"-# {e.sub}")
+        return "\n".join(lines)
 
 
 # ------------------------------------------------------------ coin checks ---
 
-def coin_check_pages(results: list[Result], label: str, prev_label: str | None, minimum: int,
-                     unknown_names: list[str] | None = None) -> list[Page]:
+def coin_board(results: list[Result], label: str, prev_label: str | None, minimum: int,
+               unknown_names: list[str] | None = None, csv_text: str | None = None) -> Board:
     by = {s: [r for r in results if r.status == s] for s in ("Pass", "Fail", "Baseline", "Missing", "Exempt")}
-    title = f"🪙 Coin check — {label}"
-    fails = sorted(by["Fail"], key=lambda r: r.gained or 0)
-    passes = sorted(by["Pass"], key=lambda r: -(r.gained or 0))
-    top = ", ".join(f"{r.member.roblox_username} (+{r.gained:,})" for r in passes[:3]) or "—"
 
-    summary = Page(title, "Summary", [
-        f"Compared with **{prev_label or 'nothing yet (first check)'}**",
-        f"Monthly minimum: **{minimum:,}**",
-    ], RED if fails else GREEN, fields=[
-        ("✅ Passed", str(len(by["Pass"])), True),
-        ("❌ Failed", str(len(fails)), True),
-        ("❓ Missing", str(len(by["Missing"])), True),
-        ("🆕 Baseline", str(len(by["Baseline"])), True),
-        ("🛡️ Exempt", str(len(by["Exempt"])), True),
-        ("⚠️ Not on roster", str(len(unknown_names or [])), True),
-        ("🏆 Top gains", top, False),
-    ], note="Use the buttons or the menu below to see each list.")
+    def entry(r: Result) -> Entry:
+        name = f"**{r.member.roblox_username}**"
+        if r.status == "Pass":
+            return Entry(f"{name} · +{r.gained:,} ✅", f"{n(r.previous)} → {n(r.total)} · {r.member.rank}")
+        if r.status == "Fail":
+            return Entry(f"{name} · +{r.gained:,} ❌", f"short {r.short_by:,} · {n(r.previous)} → {n(r.total)}")
+        if r.status == "Baseline":
+            return Entry(f"{name} · 🆕 starting point", f"total {n(r.total)} · counts from next check")
+        if r.status == "Missing":
+            return Entry(f"{name} · ❓ not in this import", f"last total {n(r.previous)}")
+        gained = f" · +{r.gained:,}" if r.gained is not None else ""
+        return Entry(f"{name} · 🛡️ exempt", f"{r.member.rank}{gained}")
 
-    pages = [summary]
-    pages += section_pages(title, "❌ Failed", [
-        f"**{r.member.roblox_username}** — gained {n(r.gained)} · short **{n(r.short_by)}**" for r in fails],
-        RED, "Nobody failed this month 🎉")
+    checked = sorted(by["Pass"] + by["Fail"], key=lambda r: -(r.gained or 0))
+    baseline = sorted(by["Baseline"], key=lambda r: -(r.total or 0))
+    everyone = checked + baseline + by["Missing"]
+    lists = [ListView("📊 Everyone", [entry(r) for r in everyone], ranked=bool(checked))]
+    lists.append(ListView(f"❌ Failed ({len(by['Fail'])})",
+                          [entry(r) for r in sorted(by["Fail"], key=lambda r: r.gained or 0)],
+                          empty="Nobody failed 🎉"))
+    lists.append(ListView(f"✅ Passed ({len(by['Pass'])})",
+                          [entry(r) for r in sorted(by["Pass"], key=lambda r: -(r.gained or 0))], ranked=True,
+                          empty="Nobody passed yet."))
     if by["Missing"]:
-        pages += section_pages(title, "❓ Missing from this import", [r.member.roblox_username for r in by["Missing"]],
-                               AMBER, note="On the roster but not in the file. Left the clan, or the name was misread?")
-    if unknown_names:
-        pages += section_pages(title, "⚠️ Not on the roster", unknown_names, AMBER,
-                               note="Add them with /roster add, or fix a misspelling with /coins set.")
+        lists.append(ListView(f"❓ Missing ({len(by['Missing'])})", [entry(r) for r in by["Missing"]]))
     if by["Baseline"]:
-        pages += section_pages(title, "🆕 Baseline (first check)", [r.member.roblox_username for r in by["Baseline"]],
-                               BLURPLE, note="No previous total yet. Their next check will count.")
-    pages += section_pages(title, "✅ Passed", [
-        f"{r.member.roblox_username} — +{r.gained:,}" for r in passes], GREEN, "Nobody passed yet.")
-    pages += section_pages(title, "🛡️ Exempt", [
-        f"{r.member.roblox_username} ({r.member.rank})" for r in by["Exempt"]], PURPLE)
-    return pages
+        lists.append(ListView(f"🆕 Starting point ({len(baseline)})", [entry(r) for r in baseline]))
+    if unknown_names:
+        lists.append(ListView(f"⚠️ Not on roster ({len(unknown_names)})",
+                              [Entry(f"**{u}**", "in the import but not on the roster · /roster add or /coins set")
+                               for u in unknown_names]))
+    lists.append(ListView(f"🛡️ Exempt ({len(by['Exempt'])})", [entry(r) for r in by["Exempt"]]))
 
-
-def member_status_page(m: Member, history: list[tuple[str, int, int | None]], minimum: int,
-                       current: int | None = None) -> Page:
-    title = f"🪙 {m.roblox_username}"
-    lines = [f"Rank: **{m.rank}**" + (" · 🛡️ exempt from coin checks" if m.exempt else ""), ""]
-    color = PURPLE if m.exempt else BLURPLE
-    if not history:
-        lines.append("No coin checks recorded yet.")
-    else:
-        lines.append("**Recent checks**")
-        for label, total, gained in history:
-            if gained is None:
-                verdict = "starting point"
-            elif m.exempt:
-                verdict = f"+{gained:,}"
-            else:
-                verdict = f"+{gained:,} {'✅' if gained >= minimum else '❌'}"
-            lines.append(f"`{label}` total {total:,} · {verdict}")
-        last_gain = history[0][2]
-        if last_gain is not None and not m.exempt:
-            color = GREEN if last_gain >= minimum else RED
-    fields = []
-    if current is not None and not m.exempt:
-        if history:
-            so_far = current - history[0][1]
-            need = max(0, minimum - so_far)
-            fields.append(("This month so far",
-                           f"Gained **{so_far:,}** since {history[0][0]}\n" +
-                           ("✅ Minimum reached!" if need == 0 else f"Need **{need:,}** more to reach {minimum:,}"),
-                           False))
-            color = GREEN if need == 0 else AMBER
-        else:
-            fields.append(("This month so far", "No previous check to compare with yet.", False))
-    return Page(title, "Status", lines, color, fields, note=f"Monthly minimum: {minimum:,}")
-
-
-# ------------------------------------------------------------ role checks ---
-
-def discord_check_pages(roster: list[Member], role_holder_ids: set[int], server_ids: set[int],
-                        names: dict[int, str], role_name: str) -> list[Page]:
-    missing, not_in_server, no_id, roster_ids, ok = [], [], [], set(), 0
-    for m in roster:
-        if m.discord_id is None:
-            no_id.append(m.roblox_username)
-            continue
-        roster_ids.add(m.discord_id)
-        if m.discord_id not in server_ids:
-            not_in_server.append(f"{m.roblox_username} · ID {m.discord_id}")
-        elif m.discord_id not in role_holder_ids:
-            missing.append(f"**{m.roblox_username}** — <@{m.discord_id}> ({names.get(m.discord_id, '?')})")
-        else:
-            ok += 1
-    extra = [f"<@{i}> ({names.get(i, '?')})" for i in sorted(role_holder_ids - roster_ids)]
-    title = f"💬 Discord check — {role_name}"
-    problems = len(missing) + len(extra) + len(not_in_server)
-    pages = [Page(title, "Discord summary", [f"Comparing the roster with the **{role_name}** role."],
-                  AMBER if problems else GREEN, fields=[
-                      ("✅ Correct", str(ok), True), ("➕ Missing role", str(len(missing)), True),
-                      ("➖ Shouldn't have it", str(len(extra)), True), ("🚪 Not in server", str(len(not_in_server)), True),
-                      ("🔗 No Discord linked", str(len(no_id)), True)])]
-    pages += section_pages(title, f"➕ Needs {role_name}", missing, AMBER, "Everyone on the roster has it 🎉")
-    pages += section_pages(title, f"➖ Has {role_name}, not on roster", extra, AMBER, "Nobody extra 🎉")
-    if not_in_server:
-        pages += section_pages(title, "🚪 Not in the server", not_in_server, GREY)
-    if no_id:
-        pages += section_pages(title, "🔗 No Discord linked", no_id, GREY, note="Link them with /roster link.")
-    return pages
-
-
-def roblox_check_pages(roster: list[Member], ids: dict[str, int], holders: dict[int, tuple[str, str]]) -> list[Page]:
-    missing, unknown, roster_uids, ok = [], [], set(), 0
-    for m in roster:
-        uid = m.roblox_id or ids.get(m.roblox_username.lower())
-        if uid is None:
-            unknown.append(m.roblox_username)
-            continue
-        roster_uids.add(uid)
-        if uid in holders:
-            ok += 1
-        else:
-            missing.append(m.roblox_username)
-    extra = [f"{name} ({role})" for uid, (name, role) in sorted(holders.items(), key=lambda kv: kv[1][0].lower())
-             if uid not in roster_uids]
-    title = "🎮 Roblox group check"
-    problems = len(missing) + len(extra) + len(unknown)
-    pages = [Page(title, "Roblox summary", ["Comparing the roster with clan roles in the Roblox group."],
-                  AMBER if problems else GREEN, fields=[
-                      ("✅ Correct", str(ok), True), ("➕ Missing clan role", str(len(missing)), True),
-                      ("➖ Shouldn't have it", str(len(extra)), True), ("❓ Name not found", str(len(unknown)), True)])]
-    pages += section_pages(title, "➕ Needs a clan role", missing, AMBER, "Everyone has their role 🎉",
-                           note="Search them in the group's Members page and set Clan Member.")
-    pages += section_pages(title, "➖ Clan role, not on roster", extra, AMBER, "Nobody extra 🎉")
-    if unknown:
-        pages += section_pages(title, "❓ Roblox name not found", unknown, GREY, note="Check the spelling on the roster.")
-    return pages
+    parts = [f"Compared with {prev_label}" if prev_label else "First check (starting point)",
+             f"min {minimum:,}"]
+    if prev_label:
+        parts.append(f"✅ {len(by['Pass'])} · ❌ {len(by['Fail'])}")
+    if by["Missing"]:
+        parts.append(f"❓ {len(by['Missing'])}")
+    color = RED if by["Fail"] else (GREEN if by["Pass"] else BLURPLE)
+    return Board(f"🪙 Coin check — {label}", " · ".join(parts), lists, color, csv_text=csv_text)
 
 
 # ----------------------------------------------------------------- roster ---
 
-def roster_pages(members: list[Member], latest: dict[str, Result] | None = None) -> list[Page]:
-    title = f"📋 [gg] roster — {len(members)}/100"
-    exempt = [m for m in members if m.exempt]
-    regular = [m for m in members if not m.exempt]
-    unlinked = [m.roblox_username for m in members if not m.discord_id]
-    pages = [Page(title, "Overview", ["Full list attached as a spreadsheet file."], BLURPLE, fields=[
-        ("👥 Members", str(len(members)), True), ("🛡️ Exempt", str(len(exempt)), True),
-        ("🔗 Not linked", str(len(unlinked)), True), ("🪑 Open spots", str(max(0, 100 - len(members))), True)])]
+def roster_board(members: list[Member], latest: dict[str, Result] | None = None,
+                 csv_text: str | None = None) -> Board:
+    latest = latest or {}
 
-    def line(m: Member) -> str:
-        r = latest.get(m.roblox_username) if latest else None
-        status = {"Pass": "✅", "Fail": "❌", "Baseline": "🆕", "Missing": "❓", "Exempt": "🛡️"}.get(r.status, "") if r else ""
-        link = f"<@{m.discord_id}>" if m.discord_id else "*not linked*"
-        return f"{status} **{m.roblox_username}** · {m.rank} · {link}".strip()
+    def total(m: Member) -> int:
+        r = latest.get(m.roblox_username)
+        return r.total if r and r.total is not None else -1
 
-    pages += section_pages(title, "🛡️ Staff & exempt", [line(m) for m in exempt], PURPLE)
-    pages += section_pages(title, "👥 Members", [line(m) for m in regular], BLURPLE)
+    def entry(m: Member, show_total: bool = True) -> Entry:
+        t = total(m)
+        main = f"**{m.roblox_username}**" + (f" · {t:,}" if show_total and t >= 0 else "")
+        bits = [m.rank]
+        if m.exempt:
+            bits.append("🛡️ exempt")
+        bits.append(f"<@{m.discord_id}>" if m.discord_id else "not linked")
+        return Entry(main, " · ".join(bits))
+
+    lists = [
+        ListView("🏆 By contribution", [entry(m) for m in sorted(members, key=lambda m: -total(m))], ranked=True),
+        ListView("🔤 A–Z", [entry(m) for m in sorted(members, key=lambda m: m.roblox_username.lower())]),
+        ListView(f"🛡️ Staff & exempt ({sum(m.exempt for m in members)})",
+                 [entry(m) for m in members if m.exempt]),
+    ]
+    unlinked = [m for m in members if not m.discord_id]
     if unlinked:
-        pages += section_pages(title, "🔗 Not linked to Discord", unlinked, GREY, note="Use /roster link.")
-    return pages
+        lists.append(ListView(f"🔗 Not linked ({len(unlinked)})", [entry(m, False) for m in unlinked]))
+    header = f"{len(members)}/100 members · {sum(m.exempt for m in members)} exempt · {len(unlinked)} not linked"
+    return Board("📋 [gg] Roster", header, lists, BLURPLE, csv_text=csv_text)
+
+
+# ------------------------------------------------------------ role checks ---
+
+def check_board(roster: list[Member],
+                discord: tuple[set[int], set[int], dict[int, str], str] | None,
+                roblox: tuple[dict[str, int], dict[int, tuple[str, str]]] | None,
+                errors: list[str] | None = None) -> Board:
+    """discord = (role holder ids, server member ids, id->name, role name)
+    roblox  = (username->userId, userId->(username, role))"""
+    lists: list[ListView] = []
+    summary: list[str] = []
+    problems = 0
+
+    if discord:
+        role_ids, server_ids, names, role_name = discord
+        missing, gone, no_id, roster_ids = [], [], [], set()
+        for m in roster:
+            if m.discord_id is None:
+                no_id.append(Entry(f"**{m.roblox_username}**", "no Discord linked · /roster link"))
+                continue
+            roster_ids.add(m.discord_id)
+            who = names.get(m.discord_id, str(m.discord_id))
+            if m.discord_id not in server_ids:
+                gone.append(Entry(f"**{m.roblox_username}**", f"{who} · not in the server"))
+            elif m.discord_id not in role_ids:
+                missing.append(Entry(f"**{m.roblox_username}**", f"<@{m.discord_id}> · needs {role_name}"))
+        extra = [Entry(f"<@{i}>", f"{names.get(i, '?')} · has {role_name} but isn't on the roster")
+                 for i in sorted(role_ids - roster_ids, key=lambda i: names.get(i, "").lower())]
+        lists += [ListView(f"➕ Needs {role_name} ({len(missing)})", missing),
+                  ListView(f"➖ Remove {role_name} ({len(extra)})", extra)]
+        if gone:
+            lists.append(ListView(f"🚪 Not in server ({len(gone)})", gone))
+        if no_id:
+            lists.append(ListView(f"🔗 No Discord linked ({len(no_id)})", no_id))
+        problems += len(missing) + len(extra) + len(gone)
+        summary.append(f"Discord: {len(missing)} need role, {len(extra)} extra")
+
+    if roblox:
+        ids, holders = roblox
+        missing, unknown, roster_uids = [], [], set()
+        for m in roster:
+            uid = m.roblox_id or ids.get(m.roblox_username.lower())
+            if uid is None:
+                unknown.append(Entry(f"**{m.roblox_username}**", "Roblox name not found · check the spelling"))
+                continue
+            roster_uids.add(uid)
+            if uid not in holders:
+                missing.append(Entry(f"**{m.roblox_username}**", "needs Clan Member in the Roblox group"))
+        extra = [Entry(f"**{name}**", f"{role} in the group but not on the roster")
+                 for uid, (name, role) in sorted(holders.items(), key=lambda kv: kv[1][0].lower())
+                 if uid not in roster_uids]
+        lists += [ListView(f"🎮 Needs clan role ({len(missing)})", missing),
+                  ListView(f"🎮 Remove clan role ({len(extra)})", extra)]
+        if unknown:
+            lists.append(ListView(f"❓ Roblox name not found ({len(unknown)})", unknown))
+        problems += len(missing) + len(extra) + len(unknown)
+        summary.append(f"Roblox: {len(missing)} need role, {len(extra)} extra")
+
+    for err in errors or []:
+        summary.append(f"⚠️ {err}")
+    if not lists:
+        lists = [ListView("Nothing checked", [])]
+    return Board("🔎 Roster check", " · ".join(summary), lists, AMBER if problems else GREEN, noun="people")
+
+
+# ---------------------------------------------------------- member status ---
+
+def member_status(m: Member, history: list[tuple[str, int, int | None]], minimum: int,
+                  current: int | None = None) -> tuple[str, str, int]:
+    """(title, description, colour) for /mystatus and /coins status."""
+    lines = [f"-# {m.rank}" + (" · 🛡️ exempt from coin checks" if m.exempt else "") + f" · minimum {minimum:,}", ""]
+    color = PURPLE if m.exempt else BLURPLE
+    if not history:
+        lines.append("No coin checks recorded yet.")
+    for label, total, gained in history:
+        if gained is None:
+            lines += [f"**{label}** · 🆕 starting point", f"-# total {total:,}"]
+        elif m.exempt:
+            lines += [f"**{label}** · +{gained:,}", f"-# total {total:,}"]
+        else:
+            ok = gained >= minimum
+            lines += [f"**{label}** · +{gained:,} {'✅' if ok else '❌'}",
+                      f"-# total {total:,}" + ("" if ok else f" · short {minimum - gained:,}")]
+    if history and history[0][2] is not None and not m.exempt:
+        color = GREEN if history[0][2] >= minimum else RED
+    if current is not None and not m.exempt:
+        lines.append("")
+        if history:
+            so_far = current - history[0][1]
+            need = max(0, minimum - so_far)
+            lines.append(f"**This month so far:** +{so_far:,}")
+            lines.append("-# ✅ minimum reached!" if need == 0 else f"-# need {need:,} more to reach {minimum:,}")
+            color = GREEN if need == 0 else AMBER
+        else:
+            lines.append("-# No previous check to compare with yet.")
+    return f"🪙 {m.roblox_username}", "\n".join(lines), color

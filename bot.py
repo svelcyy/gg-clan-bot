@@ -31,7 +31,7 @@ from dotenv import load_dotenv
 import reports
 import roblox as rbx
 import updater
-from reports import AMBER, GREEN, PURPLE, RED, Page
+from reports import AMBER, GREEN, PURPLE, RED, Board
 from storage import RANKS, Store, parse_totals_csv
 
 load_dotenv()
@@ -75,58 +75,63 @@ if (HERE / "seed_roster.csv").exists():
         log.info("Loaded the starting roster and the 18 Oct 2026 totals")
 
 
-# ============================================================ embeds/pages ===
-
-def page_embed(page: Page, index: int = 0, count: int = 1) -> discord.Embed:
-    desc = "\n".join(page.lines)
-    if page.note:
-        desc += f"\n\n*{page.note}*"
-    e = discord.Embed(title=page.title, description=desc[:4096], color=page.color)
-    for name, value, inline in page.fields:
-        e.add_field(name=name, value=value[:1024] or "—", inline=inline)
-    footer = page.section if count == 1 else f"{page.section} · page {index + 1} of {count}"
-    e.set_footer(text=footer)
-    return e
-
+# ================================================================ boards ===
+# Leaderboard-style embed: a menu to switch lists, ◀ ▶ to change page,
+# and a button that hands out the full list as a spreadsheet file.
 
 def simple(text: str, color: int = GREEN, title: str | None = None) -> discord.Embed:
     return discord.Embed(title=title, description=text, color=color)
 
 
-class SectionMenu(discord.ui.Select):
-    def __init__(self, paginator: "Paginator"):
-        self.paginator = paginator
-        seen, options = set(), []
-        for i, p in enumerate(paginator.pages):
-            if p.section not in seen and len(options) < 25:
-                seen.add(p.section)
-                options.append(discord.SelectOption(label=p.section[:100], value=str(i)))
-        super().__init__(placeholder="Jump to a section…", options=options, row=1)
+def csv_file(text: str, name: str) -> discord.File:
+    return discord.File(io.BytesIO(text.encode("utf-8")), filename=name)
+
+
+def board_embed(board: Board, list_index: int = 0, page: int = 0) -> discord.Embed:
+    return discord.Embed(title=board.title, description=board.render(list_index, page)[:4096], color=board.color)
+
+
+class ListMenu(discord.ui.Select):
+    def __init__(self, view: "BoardView"):
+        self.board_view = view
+        options = [discord.SelectOption(label=lv.label[:100], value=str(i), default=i == 0)
+                   for i, lv in enumerate(view.board.lists[:25])]
+        super().__init__(placeholder="Switch list…", options=options, row=0)
 
     async def callback(self, interaction: discord.Interaction):
-        self.paginator.index = int(self.values[0])
-        await self.paginator.show(interaction)
+        v = self.board_view
+        v.list_index, v.page = int(self.values[0]), 0
+        for o in self.options:
+            o.default = o.value == self.values[0]
+        await v.show(interaction)
 
 
-class Paginator(discord.ui.View):
-    """◀ ▶ buttons plus a section menu. Only the person who ran the command (or staff) can flip pages."""
+class BoardView(discord.ui.View):
+    """Only the person who ran the command (or staff) can flip pages."""
 
-    def __init__(self, pages: list[Page], owner_id: int | None = None, timeout: float = 900):
+    def __init__(self, board: Board, owner_id: int | None = None, timeout: float = 900):
         super().__init__(timeout=timeout)
-        self.pages, self.owner_id, self.index = pages, owner_id, 0
+        self.board, self.owner_id = board, owner_id
+        self.list_index, self.page = 0, 0
         self.message: discord.Message | None = None
-        if len({p.section for p in pages}) > 1:
-            self.add_item(SectionMenu(self))
+        if len(board.lists) > 1:
+            self.add_item(ListMenu(self))
+        if not board.csv_text:
+            self.remove_item(self.spreadsheet)
         self._sync()
 
+    def needed(self) -> bool:
+        return len(self.board.lists) > 1 or self.board.page_count(0) > 1 or bool(self.board.csv_text)
+
     def embed(self) -> discord.Embed:
-        return page_embed(self.pages[self.index], self.index, len(self.pages))
+        return board_embed(self.board, self.list_index, self.page)
 
     def _sync(self):
-        last = len(self.pages) - 1
-        self.first.disabled = self.prev.disabled = self.index == 0
-        self.next.disabled = self.last.disabled = self.index == last
-        self.counter.label = f"{self.index + 1} / {len(self.pages)}"
+        pages = self.board.page_count(self.list_index)
+        self.page = min(self.page, pages - 1)
+        self.prev.disabled = self.page == 0
+        self.next.disabled = self.page >= pages - 1
+        self.counter.label = f"{self.page + 1}/{pages}"
 
     async def show(self, interaction: discord.Interaction):
         self._sync()
@@ -136,7 +141,7 @@ class Paginator(discord.ui.View):
         perms = getattr(interaction.user, "guild_permissions", None)
         if self.owner_id in (None, interaction.user.id) or (perms and perms.manage_roles):
             return True
-        await interaction.response.send_message("Run the command yourself to browse these pages.", ephemeral=True)
+        await interaction.response.send_message("Run the command yourself to browse this list.", ephemeral=True)
         return False
 
     async def on_timeout(self):
@@ -148,64 +153,46 @@ class Paginator(discord.ui.View):
             except discord.HTTPException:
                 pass
 
-    @discord.ui.button(emoji="⏮️", style=discord.ButtonStyle.secondary, row=0)
-    async def first(self, interaction: discord.Interaction, _):
-        self.index = 0
-        await self.show(interaction)
-
-    @discord.ui.button(emoji="◀️", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(emoji="◀️", style=discord.ButtonStyle.secondary, row=1)
     async def prev(self, interaction: discord.Interaction, _):
-        self.index = max(0, self.index - 1)
+        self.page -= 1
         await self.show(interaction)
 
-    @discord.ui.button(label="1 / 1", style=discord.ButtonStyle.secondary, disabled=True, row=0)
+    @discord.ui.button(label="1/1", style=discord.ButtonStyle.secondary, disabled=True, row=1)
     async def counter(self, interaction: discord.Interaction, _):
         pass
 
-    @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.secondary, row=1)
     async def next(self, interaction: discord.Interaction, _):
-        self.index = min(len(self.pages) - 1, self.index + 1)
+        self.page += 1
         await self.show(interaction)
 
-    @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.secondary, row=0)
-    async def last(self, interaction: discord.Interaction, _):
-        self.index = len(self.pages) - 1
-        await self.show(interaction)
+    @discord.ui.button(label="Spreadsheet", emoji="📄", style=discord.ButtonStyle.secondary, row=1)
+    async def spreadsheet(self, interaction: discord.Interaction, _):
+        name = self.board.title.split("— ")[-1].strip().replace(" ", "_").replace("[", "").replace("]", "")
+        await interaction.response.send_message("Here's the full list. It opens in Excel or Google Sheets.",
+                                                file=csv_file(self.board.csv_text or "", f"{name or 'list'}.csv"),
+                                                ephemeral=True)
 
 
-def csv_file(text: str, name: str) -> discord.File:
-    return discord.File(io.BytesIO(text.encode("utf-8")), filename=name)
+async def send_board(interaction: discord.Interaction, board: Board, ephemeral: bool = False):
+    """Reply to a deferred interaction with one tidy embed."""
+    view = BoardView(board, owner_id=interaction.user.id)
+    if view.needed():
+        view.message = await interaction.followup.send(embed=view.embed(), view=view, ephemeral=ephemeral, wait=True)
+    else:
+        await interaction.followup.send(embed=view.embed(), ephemeral=ephemeral)
 
 
-async def send_pages(interaction: discord.Interaction, pages: list[Page], file: discord.File | None = None,
-                     ephemeral: bool = False):
-    """Reply to a deferred interaction with paged embeds (one message)."""
-    kwargs = {"ephemeral": ephemeral, "wait": True}
-    if file:
-        kwargs["file"] = file
-    if len(pages) == 1:
-        await interaction.followup.send(embed=page_embed(pages[0]), **kwargs)
-        return
-    view = Paginator(pages, owner_id=interaction.user.id)
-    view.message = await interaction.followup.send(embed=view.embed(), view=view, **kwargs)
-
-
-async def post_pages_to_staff(pages: list[Page], file_text: str | None = None, file_name: str = "results.csv",
-                              skip_channel_id: int | None = None):
+async def post_board_to_staff(board: Board, skip_channel_id: int | None = None):
     if not STAFF_CHANNEL_ID or int(STAFF_CHANNEL_ID) == skip_channel_id:
         return
     channel = bot.get_channel(int(STAFF_CHANNEL_ID))
     if channel is None:
         log.warning("STAFF_CHANNEL_ID %s not found", STAFF_CHANNEL_ID)
         return
-    view = Paginator(pages, owner_id=None, timeout=86400)  # staff can browse for a day
-    kwargs = {"embed": view.embed()}
-    if len(pages) > 1:
-        kwargs["view"] = view
-    if file_text:
-        kwargs["file"] = csv_file(file_text, file_name)
-    msg = await channel.send(**kwargs)
-    view.message = msg
+    view = BoardView(board, owner_id=None, timeout=86400)  # staff can browse for a day
+    view.message = await channel.send(embed=view.embed(), view=view if view.needed() else None)
 
 
 async def roster_autocomplete(interaction: discord.Interaction, current: str):
@@ -342,8 +329,7 @@ async def roster_list(interaction: discord.Interaction):
     await interaction.response.defer()
     cid = store.latest_check_id()
     latest = {r.member.roblox_username: r for r in store.results(cid)} if cid else None
-    await send_pages(interaction, reports.roster_pages(store.members(), latest),
-                     csv_file(store.export_csv(), "gg_roster.csv"))
+    await send_board(interaction, reports.roster_board(store.members(), latest, store.export_csv()))
 
 
 # ================================================================= /coins ===
@@ -352,10 +338,11 @@ coins_group = app_commands.Group(name="coins", description="Monthly coin checks"
                                  default_permissions=STAFF_ONLY, guild_only=True)
 
 
-def check_pages(cid: int, unknown: list[str] | None = None) -> list[Page]:
+def coin_board(cid: int, unknown: list[str] | None = None) -> Board:
     prev = store.previous_check_id(cid)
-    return reports.coin_check_pages(store.results(cid), store.check_label(cid),
-                                    store.check_label(prev) if prev else None, store.get_minimum(), unknown)
+    return reports.coin_board(store.results(cid), store.check_label(cid),
+                              store.check_label(prev) if prev else None, store.get_minimum(), unknown,
+                              csv_text=store.export_csv())
 
 
 @coins_group.command(name="import", description="Import this month's totals (a .csv file: username,total)")
@@ -372,12 +359,10 @@ async def coins_import(interaction: discord.Interaction, file: discord.Attachmen
         return
     label = label or dt.date.today().strftime("%d %b %Y")
     cid, unknown = store.import_check(label, totals, str(interaction.user))
-    pages = check_pages(cid, unknown)
-    pages[0].note = (f"Imported {len(totals)} totals. Wrong number? /coins set · Wrong file? /coins undo")
-    fname = f"coin_check_{label.replace(' ', '_')}.csv"
-    export = store.export_csv()
-    await send_pages(interaction, pages, csv_file(export, fname))
-    await post_pages_to_staff(pages, export, fname, skip_channel_id=interaction.channel_id)
+    board = coin_board(cid, unknown)
+    board.header += f" · imported {len(totals)}"
+    await send_board(interaction, board)
+    await post_board_to_staff(board, skip_channel_id=interaction.channel_id)
 
 
 @coins_group.command(name="results", description="Show the latest coin check results")
@@ -387,7 +372,7 @@ async def coins_results(interaction: discord.Interaction):
         await interaction.response.send_message(embed=simple("No coin checks yet. Use `/coins import`.", AMBER))
         return
     await interaction.response.defer()
-    await send_pages(interaction, check_pages(cid), csv_file(store.export_csv(), "coin_check_latest.csv"))
+    await send_board(interaction, coin_board(cid))
 
 
 @coins_group.command(name="set", description="Fix one member's total in the latest check")
@@ -415,8 +400,8 @@ async def coins_status(interaction: discord.Interaction, roblox: str):
     if not m:
         await interaction.response.send_message(embed=simple(f"**{roblox}** isn't on the roster.", AMBER))
         return
-    page = reports.member_status_page(m, store.history(m.roblox_username), store.get_minimum())
-    await interaction.response.send_message(embed=page_embed(page))
+    title, desc, color = reports.member_status(m, store.history(m.roblox_username), store.get_minimum())
+    await interaction.response.send_message(embed=simple(desc, color, title))
 
 
 @coins_group.command(name="minimum", description="Change the monthly minimum (default 10,000)")
@@ -454,8 +439,8 @@ async def mystatus(interaction: discord.Interaction, current: Optional[app_comma
             "I can't find you on the clan roster. If you're in the clan, ask a staff member to link your "
             "Discord with `/roster link`.", AMBER), ephemeral=True)
         return
-    page = reports.member_status_page(m, store.history(m.roblox_username), store.get_minimum(), current)
-    await interaction.response.send_message(embed=page_embed(page), ephemeral=True)
+    title, desc, color = reports.member_status(m, store.history(m.roblox_username), store.get_minimum(), current)
+    await interaction.response.send_message(embed=simple(desc, color, title), ephemeral=True)
 
 
 # ================================================================= /update ===
@@ -492,15 +477,15 @@ async def update(interaction: discord.Interaction):
 
 # ================================================================== /check ===
 
-async def build_check(guild: discord.Guild, which: str) -> list[Page]:
+async def build_check(guild: discord.Guild, which: str) -> Board:
     roster = store.members()
-    pages: list[Page] = []
+    discord_data = roblox_data = None
+    errors: list[str] = []
     if which in ("all", "discord"):
         role = (guild.get_role(int(MEMBER_ROLE)) if MEMBER_ROLE.isdigit()
                 else discord.utils.get(guild.roles, name=MEMBER_ROLE))
         if role is None:
-            pages.append(Page("💬 Discord check", "Discord summary",
-                              [f"⚠️ Couldn't find a Discord role called **{MEMBER_ROLE}**."], RED))
+            errors.append(f"Couldn't find a Discord role called {MEMBER_ROLE}")
         else:
             server_ids, role_ids, names = set(), set(), {}
             async for mem in guild.fetch_members(limit=None):
@@ -510,7 +495,7 @@ async def build_check(guild: discord.Guild, which: str) -> list[Page]:
                 names[mem.id] = mem.name
                 if any(r.id == role.id for r in mem.roles):
                     role_ids.add(mem.id)
-            pages += reports.discord_check_pages(roster, role_ids, server_ids, names, role.name)
+            discord_data = (role_ids, server_ids, names, role.name)
     if which in ("all", "roblox"):
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as s:
@@ -520,11 +505,12 @@ async def build_check(guild: discord.Guild, which: str) -> list[Page]:
                     if not m.roblox_id and m.roblox_username.lower() in found:
                         store.update_member(m.roblox_username, roblox_id=found[m.roblox_username.lower()][0])
                 holders = await rbx.clan_role_holders(s, ROBLOX_GROUP_ID, ROBLOX_MIN_RANK, ROBLOX_IGNORE_ROLES)
-            pages += reports.roblox_check_pages(store.members(), {k: v[0] for k, v in found.items()}, holders)
+            roster = store.members()
+            roblox_data = ({k: v[0] for k, v in found.items()}, holders)
         except Exception as e:
             log.exception("Roblox check failed")
-            pages.append(Page("🎮 Roblox group check", "Roblox summary", [f"⚠️ Roblox check failed: {e}"], RED))
-    return pages
+            errors.append(f"Roblox check failed: {e}")
+    return reports.check_board(roster, discord_data, roblox_data, errors)
 
 
 @bot.tree.command(name="check", description="Compare the roster with Discord roles and the Roblox group")
@@ -537,7 +523,7 @@ async def build_check(guild: discord.Guild, which: str) -> list[Page]:
 @app_commands.guild_only()
 async def check(interaction: discord.Interaction, what: Optional[app_commands.Choice[str]] = None):
     await interaction.response.defer(thinking=True)
-    await send_pages(interaction, await build_check(interaction.guild, what.value if what else "all"))
+    await send_board(interaction, await build_check(interaction.guild, what.value if what else "all"))
 
 
 @tasks.loop(time=dt.time(hour=REPORT_HOUR_UTC, tzinfo=dt.timezone.utc))
@@ -547,10 +533,9 @@ async def weekly_report():
     guild = bot.get_guild(GUILD_ID)
     if guild is None:
         return
-    pages = await build_check(guild, "all")
-    for p in pages:
-        p.title = "📋 Weekly — " + p.title
-    await post_pages_to_staff(pages)
+    board = await build_check(guild, "all")
+    board.title = "📋 Weekly — " + board.title
+    await post_board_to_staff(board)
 
 
 @weekly_report.before_loop
