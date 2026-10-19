@@ -1,4 +1,5 @@
 # Newest first. Format: version | what changed
+2.9.1 | Clearer /reminders labels
 2.9.0 | New /restart: restart the bot from Discord
 2.8.0 | Monthly coin check reminder ping, optional restart reminder, and /reminders
 2.7.0 | New /leaderboard for everyone: the latest coin check with Discord users, coins and gains

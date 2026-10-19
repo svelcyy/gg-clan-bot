@@ -1142,12 +1142,12 @@ async def reminders(interaction: discord.Interaction):
         nxt = (nxt.replace(day=1) + dt.timedelta(days=32)).replace(day=COIN_REMINDER_DAY)
     text, _ = ping_target(interaction.guild)
     restart = (f"{RESTART_REMINDER_HOURS_BEFORE:g} hours before {RESTART_REMINDER_DAYS:g} days online"
-               if RESTART_REMINDER_DAYS > 0 else "Off")
+               if RESTART_REMINDER_DAYS > 0 else "Off · Not needed, Wispbyte doesn't stop the bot")
     e = update_embed("⏰ Reminders", "", reports.BLURPLE, fields=[
         ("Channel", f"<#{REMINDER_CHANNEL_ID}>" if REMINDER_CHANNEL_ID else "⚠️ Not set (REMINDER_CHANNEL_ID)", True),
         ("Pings", text or "⚠️ Nobody (set REMINDER_PING)", True),
-        ("Coin Check", f"<t:{int(nxt.timestamp())}:F>" if COIN_REMINDER else "Off", True),
-        ("Restart", restart, True),
+        ("Coin Check Reminder", f"<t:{int(nxt.timestamp())}:F>" if COIN_REMINDER else "Off", True),
+        ("Restart Reminder", restart, False),
     ])
     sent = await send_reminder(discord.Embed(title="🧪 Test Reminder", color=reports.BLURPLE,
                                              description="Reminders will show up here like this.")) \
