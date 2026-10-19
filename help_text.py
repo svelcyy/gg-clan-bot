@@ -53,6 +53,7 @@ COMMANDS: list[HelpEntry] = [
               "Change someone's clan rank (and their Discord role)",
               "/roster rank roblox:zayn rank:Officer",
               "Updates the roster and swaps their Discord rank role and Roblox group role to match. "
+              "Staff keep **Clan Member** in the group as well as their staff role. "
               "Only you see the reply. A ⬆️ Promoted / ⬇️ Demoted card (no pings) goes to the roster log channel."),
     HelpEntry("/roster link", "Roster", True,
               "Link or change someone's Discord account",

@@ -68,24 +68,28 @@ def membership_id(user_id: int) -> str:
     return base64.urlsafe_b64encode(str(user_id).encode()).decode().rstrip("=")
 
 
-def plan_role_change(current: set[int], wanted: int | None, managed: set[int],
+def plan_role_change(current: set[int], wanted: set[int] | int | None, managed: set[int],
                      ranks: dict[int, int], names: dict[int, str],
                      ignore: set[int] = frozenset()) -> tuple[set[int], set[int], str | None]:
     """Decide which clan roles to add and remove.
 
-    current: role ids the user has now · wanted: the clan role they should have (None = leaving the clan)
+    current: role ids the user has now · wanted: the clan roles they should have (empty/None = leaving)
     managed: every clan role the bot is allowed to touch · ranks/names: role id -> rank number / name
     Returns (add, remove, reason_to_skip). Someone holding a higher role the bot doesn't manage
     (like Head Administrator) is left alone so they can't be demoted by accident.
     """
-    target_rank = ranks.get(wanted, 0) if wanted else 0
+    if wanted is None:
+        wanted = set()
+    elif isinstance(wanted, int):
+        wanted = {wanted}
+    target_rank = max((ranks.get(w, 0) for w in wanted), default=0)
     higher = [r for r in current
               if r not in managed and r not in ignore and ranks.get(r, 0) > max(target_rank, 1)]
     if higher:
         top = max(higher, key=lambda r: ranks.get(r, 0))
         return set(), set(), f"Left alone, because they have a higher group role ({names.get(top, top)})."
-    add = {wanted} - current if wanted else set()
-    remove = (current & managed) - ({wanted} if wanted else set())
+    add = wanted - current
+    remove = (current & managed) - wanted
     return add, remove, None
 
 
@@ -130,7 +134,12 @@ class GroupManager:
                     "Once they're in the group, run `/check` to see who still needs a role." if rank is not None
                     else "Not in the Roblox group, so nothing was changed.")
         current = {int(r.split("/")[-1]) for r in (mem.get("roles") or [mem.get("role")]) if r}
-        wanted = self.role_id(self.role_names.get(rank, "")) if rank else None
+        wanted: set[int] = set()
+        if rank:   # everyone gets Clan Member; staff also get their staff role on top
+            for name in (self.role_names.get("Member", ""), self.role_names.get(rank, "")):
+                rid = self.role_id(name)
+                if rid:
+                    wanted.add(rid)
         managed = {i for i in (self.role_id(n) for n in self.role_names.values() if n) if i}
         ranks = {r["id"]: r["rank"] for r in self.roles.values()}
         names = {r["id"]: r["name"] for r in self.roles.values()}
