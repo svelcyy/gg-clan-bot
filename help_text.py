@@ -166,6 +166,20 @@ COMMANDS: list[HelpEntry] = [
               "/status text:SIGNUPS OPEN!!  ·  /status  (clears it)",
               "Changes the bot's status straight away and keeps it after restarts. "
               "Handy for things like signups opening and closing."),
+    HelpEntry("/backup now", "Bot", True,
+              "Save a backup of all the bot's data right now",
+              "/backup now",
+              "The bot also saves one automatically every day at 4 AM. Each backup is a small file posted in "
+              "the backup channel."),
+    HelpEntry("/backup channel", "Bot", True,
+              "Choose where backups are saved",
+              "/backup channel channel:#staff-backups",
+              "Pick a **private** staff channel, since backups contain the whole roster."),
+    HelpEntry("/backup restore", "Bot", True,
+              "Put the bot's data back from a backup file",
+              "/backup restore file:(attach the .db file) confirm:RESTORE",
+              "Download a `gg-backup_….db` file from the backup channel and attach it. The bot saves a copy of "
+              "the current data first, so a restore can always be undone."),
     HelpEntry("/update", "Bot", True,
               "Download the newest bot version and restart",
               "/update",
@@ -173,7 +187,7 @@ COMMANDS: list[HelpEntry] = [
 ]
 
 # Clan Manager commands: need the Administrator permission
-ADMIN_ONLY = {"/boostersetup", "/status", "/roster sync", "/roster rank", "/roster start", "/roster exempt", "/roster reset", "/coins import", "/coins set",
+ADMIN_ONLY = {"/backup now", "/backup channel", "/backup restore", "/boostersetup", "/status", "/roster sync", "/roster rank", "/roster start", "/roster exempt", "/roster reset", "/coins import", "/coins set",
               "/coins minimum", "/coins undo", "/update", "/restart", "/reminders"}
 
 # (name, emoji, one line for the menu). Order = order in the menu.
@@ -183,7 +197,7 @@ CATEGORIES = [
     ("Roster", "📋", "Add, remove, link and rank clan members"),
     ("Coin Checks", "🪙", "Monthly coin check results and history"),
     ("Staff Tools", "🛡️", "Role checks and the staff guide"),
-    ("Bot", "⚙️", "Status, updates, restarts and reminders"),
+    ("Bot", "⚙️", "Status, backups, updates, restarts and reminders"),
 ]
 CATEGORY_EMOJI = {name: emoji for name, emoji, _ in CATEGORIES}
 
