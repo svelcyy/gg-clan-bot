@@ -1367,10 +1367,10 @@ def request_embed(member: discord.Member, primary: int, secondary: int | None,
     e = discord.Embed(title="🎨 Custom Role Request", color=primary,
                       description=f"**{handle(member)}** is asking for a custom role.")
     e.add_field(name="Style", value="🌈 Gradient" if secondary is not None else "🎨 Solid", inline=True)
-    e.add_field(name="Colour", value=color_text(primary, secondary), inline=True)
+    e.add_field(name="Color", value=color_text(primary, secondary), inline=True)
     e.add_field(name="Role Name", value=f"@{esc(member.name)}", inline=True)
     if current and current["status"] == "active":
-        e.add_field(name="Current Colour", value=color_text(current["primary_color"], current["secondary_color"]),
+        e.add_field(name="Current Color", value=color_text(current["primary_color"], current["secondary_color"]),
                     inline=False)
     e.set_thumbnail(url=member.display_avatar.url)
     e.set_footer(text="Approve or deny below · Only admins can decide")
@@ -1454,7 +1454,7 @@ class CustomRoleReview(discord.ui.View):
                 f"⚠️ Couldn't create the role ({err.status}). Make sure the bot has **Manage Roles** and its role "
                 "is high in the role list.", ephemeral=True)
             return
-        await dm(member, "🎉 Your custom role colour was approved! Enjoy your new look in **[gg] Clan**.")
+        await dm(member, "🎉 Your custom role color was approved! Enjoy your new look in **[gg] Clan**.")
         alert = simple(f"Approved for **{handle(member)}** by {handle(interaction.user)} · "
                        f"{color_text(req['primary_color'], req['secondary_color'])}",
                        req["primary_color"], "🎨 Custom Role Approved")
@@ -1479,10 +1479,10 @@ class CustomRoleReview(discord.ui.View):
         await self._finish(interaction, "❌ Denied", RED)
 
 
-@bot.tree.command(name="customrole", description="💎 Boosters: request your own custom role colour")
+@bot.tree.command(name="customrole", description="💎 Boosters: request your own custom role color")
 @app_commands.guild_only()
-@app_commands.describe(color="Your colour as a hex code, e.g. #75117e",
-                       color2="Optional second colour for a gradient, e.g. #ff7ad9")
+@app_commands.describe(color="Your role color as a hex code (e.g. #75117e)",
+                       color2="Add a second color to make it a gradient (e.g. #ff7ad9)")
 async def customrole(interaction: discord.Interaction, color: app_commands.Range[str, 3, 7],
                      color2: Optional[app_commands.Range[str, 3, 7]] = None):
     member = interaction.user
@@ -1494,7 +1494,7 @@ async def customrole(interaction: discord.Interaction, color: app_commands.Range
     primary, secondary = colorpreview.parse_hex(color), colorpreview.parse_hex(color2) if color2 else None
     if primary is None or (color2 and secondary is None):
         await interaction.response.send_message(embed=simple(
-            "That doesn't look like a colour code. Use a hex code like `#75117e`. "
+            "That doesn't look like a color code. Use a hex code like `#75117e`. "
             "You can pick one at **htmlcolorcodes.com**.", AMBER), ephemeral=True)
         return
     if store.role_request_for(member.id):
@@ -1526,7 +1526,7 @@ async def customrole(interaction: discord.Interaction, color: app_commands.Range
     await channel.send(embed=embed, view=CustomRoleReview(), **kwargs)
     done = simple("Your request has been sent to staff. You'll get a DM once it's been looked at. 💎",
                   primary, "🎨 Request Sent")
-    done.add_field(name="Colour", value=color_text(primary, secondary), inline=True)
+    done.add_field(name="Color", value=color_text(primary, secondary), inline=True)
     await interaction.followup.send(embed=done, ephemeral=True)
 
 

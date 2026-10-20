@@ -1,4 +1,5 @@
 # Newest first. Format: version | what changed
+2.22.2 | Clearer /customrole wording
 2.22.1 | Fixed new packages not installing after /update (colour previews), new /boostersetup for the request category
 2.22.0 | New /customrole for boosters: solid or gradient colours, approved by admins
 2.21.0 | Normal green online dot, new /status command, status set to SIGNUPS OPEN!!
