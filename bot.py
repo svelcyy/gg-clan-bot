@@ -261,7 +261,7 @@ class BoardView(discord.ui.View):
         self.page += 1
         await self.show(interaction)
 
-    @discord.ui.button(label="Spreadsheet", emoji="📄", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Spreadsheet", style=discord.ButtonStyle.secondary, row=1)
     async def spreadsheet(self, interaction: discord.Interaction, _):
         name = self.board.title.split("— ")[-1].strip().replace(" ", "_").replace("[", "").replace("]", "")
         await interaction.response.send_message("Here's the full list. It opens in Excel or Google Sheets.",
@@ -400,7 +400,7 @@ def update_embed(title: str, description: str = "", color: int = GREEN, fields: 
     if group:
         e.add_field(name="Roblox Group", value=group, inline=False)
     if notes:
-        e.add_field(name="⚠️ Note", value="\n".join(notes), inline=False)
+        e.add_field(name="Note", value="\n".join(notes), inline=False)
     if footer:
         e.set_footer(text=footer)
     return e
@@ -496,13 +496,13 @@ async def load_names():
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, NotAdmin):
-        text = "🔒 Only the Clan Manager (server admins) can use this command."
+        text = "Only the Clan Manager (server admins) can use this command."
     elif isinstance(error, app_commands.CheckFailure):
-        text = "🔒 You don't have permission to use this command."
+        text = "You don't have permission to use this command."
     else:
         log.error("Command /%s failed", interaction.command.qualified_name if interaction.command else "?",
                   exc_info=error)
-        text = "⚠️ Something went wrong running that command. Try again, or tell the Clan Manager."
+        text = "Something went wrong running that command. Try again, or tell the Clan Manager."
     try:
         if interaction.response.is_done():
             await interaction.followup.send(embed=simple(text, RED), ephemeral=True)
@@ -530,7 +530,7 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
     perms = getattr(interaction.user, "guild_permissions", None)
     if not (perms and perms.administrator) and ((rank and rank.value != "Member") or exempt):
         await interaction.response.send_message(embed=simple(
-            "🔒 Only the Clan Manager can add someone as staff or as exempt. "
+            "Only the Clan Manager can add someone as staff or as exempt. "
             "Add them as a Member, and ask the Clan Manager to change their rank.", RED), ephemeral=True)
         return
     await interaction.response.defer(ephemeral=not public)  # only the person who ran it sees the reply
@@ -541,7 +541,7 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
         if name.lower() not in found:
             await interaction.followup.send(embed=simple(
                 f"There's no Roblox account called **{esc(name)}**. Check the spelling, and use the @ username, "
-                "not the display name.", RED, "❌ Not Added"), ephemeral=not public)
+                "not the display name.", RED, "Not Added"), ephemeral=not public)
             return
         rid, name = found[name.lower()]
     except Exception:
@@ -567,14 +567,14 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
     group = await sync_group(name, rid, rank_name)
     restored = returning and returning["discord_id"] and discord_user and discord_user.id == returning["discord_id"]
     desc = ("Welcome back! Their Discord link was restored." if restored else "")
-    info = [("Rank", rank_name + (" · 🛡️ Exempt" if exempt else ""), True),
+    info = [("Rank", rank_name + (" · Exempt" if exempt else ""), True),
             ("Discord", handle(discord_user) if discord_user else "Not linked", True),
             ("Starting Coins", f"{coins:,}", True)]
     footer = f"{len(store.members())} members on the roster"
     await interaction.followup.send(embed=update_embed(
-        f"✅ Added {name}", desc, fields=info, discord_roles=roles, group=group, notes=notes_out, footer=footer),
+        f"Added {name}", desc, fields=info, discord_roles=roles, group=group, notes=notes_out, footer=footer),
         ephemeral=not public)
-    alert = update_embed(f"🆕 New Clan Member: {name}", f"Added by {handle(interaction.user)}", fields=info,
+    alert = update_embed(f"New Clan Member: {name}", f"Added by {handle(interaction.user)}", fields=info,
                          footer=footer)
     alert.timestamp = discord.utils.utcnow()
     await post_alert(alert, skip_channel_id=None)
@@ -588,7 +588,7 @@ async def roster_start(interaction: discord.Interaction, roblox: str, coins: app
     ok = store.update_member(roblox, start_total=coins)
     await interaction.response.send_message(embed=simple(
         f"**{esc(roblox)}** now starts from **{coins:,}** coins." if ok else f"**{esc(roblox)}** isn't on the roster.",
-        GREEN if ok else AMBER, "🏁 Starting Coins Updated" if ok else None), ephemeral=True)
+        GREEN if ok else AMBER, "Starting Coins Updated" if ok else None), ephemeral=True)
 
 
 @roster_group.command(name="reset", description="Delete the whole roster and every coin check (admins only)")
@@ -607,7 +607,7 @@ async def roster_reset(interaction: discord.Interaction, confirm: str):
     count = len(store.members())
     store.reset_all()
     await interaction.response.send_message(embed=simple(
-        f"Removed {count} members and every coin check.\nAdd people with `/roster add`.", GREEN, "🧹 Fresh Start"))
+        f"Removed {count} members and every coin check.\nAdd people with `/roster add`.", GREEN, "Fresh Start"))
 
 
 @app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
@@ -624,7 +624,7 @@ async def roster_remove(interaction: discord.Interaction, roblox: str, keep_role
     if not (perms and perms.administrator):
         if m.discord_id == interaction.user.id:
             await interaction.response.send_message(embed=simple(
-                "🔒 You can't remove yourself from the roster. If you're leaving or resigning, "
+                "You can't remove yourself from the roster. If you're leaving or resigning, "
                 "let the Clan Manager know and they'll take care of it.", RED), ephemeral=True)
             return
         level = {"Member": 0, "Officer": 1, "Admin": 2, "Leader": 3}
@@ -632,7 +632,7 @@ async def roster_remove(interaction: discord.Interaction, roblox: str, keep_role
         my_level = level.get(me.rank, 0) if me else 0
         if level.get(m.rank, 0) >= max(my_level, 1):   # only someone ranked above them can remove them
             await interaction.response.send_message(embed=simple(
-                f"🔒 **{esc(m.roblox_username)}** is {m.rank}, the same rank as you or higher. "
+                f"**{esc(m.roblox_username)}** is {m.rank}, the same rank as you or higher. "
                 "Only someone ranked above them (or the Clan Manager) can remove them.", RED), ephemeral=True)
             return
     await interaction.response.defer(ephemeral=not public)  # only the person who ran it sees the reply
@@ -646,9 +646,9 @@ async def roster_remove(interaction: discord.Interaction, roblox: str, keep_role
         group = await sync_group(m.roblox_username, m.roblox_id, None)
     footer = f"{len(store.members())} members on the roster"
     await interaction.followup.send(embed=update_embed(
-        f"🗑️ Removed {m.roblox_username}", color=RED, discord_roles=roles, group=group,
+        f"Removed {m.roblox_username}", color=RED, discord_roles=roles, group=group,
         footer=footer), ephemeral=not public)
-    alert = update_embed(f"👋 Left the Clan: {m.roblox_username}", f"Removed by {handle(interaction.user)}",
+    alert = update_embed(f"Left the Clan: {m.roblox_username}", f"Removed by {handle(interaction.user)}",
                          color=RED, fields=[("Rank", m.rank, True),
                                             ("Discord", reports.dname(m.discord_id) or "Not linked", True)],
                          footer=footer)
@@ -669,7 +669,7 @@ async def roster_link(interaction: discord.Interaction, roblox: str, discord_use
     m = store.get_member(roblox)
     roles = await sync_roles(interaction.guild, discord_user.id, m.rank)
     await interaction.followup.send(embed=update_embed(
-        f"🔗 Linked {m.roblox_username}", f"Now linked to **{handle(discord_user)}**.",
+        f"Linked {m.roblox_username}", f"Now linked to **{handle(discord_user)}**.",
         fields=[("Rank", m.rank, True)], discord_roles=roles,
         notes=[f"That Discord account is also linked to {', '.join(others)}."] if others else []), ephemeral=True)
 
@@ -679,7 +679,7 @@ async def roster_link(interaction: discord.Interaction, roblox: str, discord_use
 @app_commands.autocomplete(roblox=roster_autocomplete)
 async def roster_exempt(interaction: discord.Interaction, roblox: str, exempt: bool):
     ok = store.update_member(roblox, exempt=exempt)
-    text = (f"🛡️ **{esc(roblox)}** is now exempt from coin checks." if exempt
+    text = (f"**{esc(roblox)}** is now exempt from coin checks." if exempt
             else f"**{esc(roblox)}** is no longer exempt from coin checks.") \
         if ok else f"**{esc(roblox)}** isn't on the roster."
     await interaction.response.send_message(embed=simple(text, PURPLE if ok and exempt else GREEN if ok else AMBER),
@@ -702,11 +702,11 @@ async def roster_rank(interaction: discord.Interaction, roblox: str, rank: app_c
     roles = await sync_roles(interaction.guild, m.discord_id, rank.value)
     group = await sync_group(m.roblox_username, m.roblox_id, rank.value)
     await interaction.followup.send(embed=update_embed(
-        f"🎖️ {m.roblox_username} is now {rank.value}", discord_roles=roles, group=group), ephemeral=not public)
+        f"{m.roblox_username} is now {rank.value}", discord_roles=roles, group=group), ephemeral=not public)
     if before.rank != rank.value:
         old_i = RANKS.index(before.rank) if before.rank in RANKS else len(RANKS)
         promoted = RANKS.index(rank.value) < old_i   # RANKS goes Leader, Admin, Officer, Member
-        alert = update_embed(f"{'⬆️ Promoted' if promoted else '⬇️ Demoted'}: {m.roblox_username}",
+        alert = update_embed(f"{'Promoted' if promoted else 'Demoted'}: {m.roblox_username}",
                              f"Changed by {handle(interaction.user)}", color=GREEN if promoted else AMBER,
                              fields=[("Rank", f"{before.rank} → **{rank.value}**", True),
                                      ("Discord", reports.dname(m.discord_id) or "Not linked", True)])
@@ -718,7 +718,7 @@ async def roster_rank(interaction: discord.Interaction, roblox: str, rank: app_c
 @app_commands.autocomplete(roblox=roster_autocomplete)
 async def roster_note(interaction: discord.Interaction, roblox: str, note: str = ""):
     ok = store.update_member(roblox, notes=note)
-    text = ((f"📝 Note saved for **{esc(roblox)}**." if note else f"📝 Note cleared for **{esc(roblox)}**.") if ok
+    text = ((f"Note saved for **{esc(roblox)}**." if note else f"Note cleared for **{esc(roblox)}**.") if ok
             else f"**{esc(roblox)}** isn't on the roster.")
     await interaction.response.send_message(embed=simple(text, GREEN if ok else AMBER), ephemeral=True)
 
@@ -750,7 +750,7 @@ async def roster_sync(interaction: discord.Interaction, remove_extras: bool = Fa
     async def progress(done: int):
         try:
             await interaction.edit_original_response(embed=simple(
-                f"Checking roles… **{done}/{len(members)}**", BLURPLE, "🔄 Syncing the Roster"))
+                f"Checking roles… **{done}/{len(members)}**", BLURPLE, "Syncing the Roster"))
         except discord.HTTPException:
             pass
 
@@ -815,22 +815,22 @@ async def roster_sync(interaction: discord.Interaction, remove_extras: bool = Fa
         except Exception:
             log.exception("Couldn't check Roblox group extras")
 
-    lists = [reports.ListView(f"✅ Fixed ({len(fixed)})", fixed, empty="Everyone already had the right roles 🎉"),
-             reports.ListView(f"⚠️ Couldn't Fix ({len(problems)})", problems, empty="No problems 🎉"),
-             reports.ListView(f"🧹 {'Removed' if remove_extras else 'Not on the Roster'} ({len(extras)})", extras,
-                              empty="Nobody extra 🎉")]
+    lists = [reports.ListView(f"Fixed ({len(fixed)})", fixed, empty="Everyone already had the right roles"),
+             reports.ListView(f"Couldn't Fix ({len(problems)})", problems, empty="No problems"),
+             reports.ListView(f"{'Removed' if remove_extras else 'Not on the Roster'} ({len(extras)})", extras,
+                              empty="Nobody extra")]
     if unlinked:
-        lists.append(reports.ListView(f"🔗 Not Linked ({len(unlinked)})",
+        lists.append(reports.ListView(f"Not Linked ({len(unlinked)})",
                                       [reports.Entry(f"**{esc(m.roblox_username)}**", "Link with /roster link")
                                        for m in unlinked]))
     header = reports.joined(f"{len(members)} checked", f"{len(fixed)} fixed",
                             f"{len(problems)} couldn't fix" if problems else "",
                             f"{len(extras)} {'removed' if remove_extras else 'not on the roster'}" if extras else "")
-    board = Board("🔄 Roster Sync", header, lists, AMBER if problems else GREEN, noun="people")
+    board = Board("Roster Sync", header, lists, AMBER if problems else GREEN, noun="people")
     view = BoardView(board, owner_id=interaction.user.id)
     await interaction.edit_original_response(embed=view.embed(), view=view if view.needed() else None)
     if fixed or (remove_extras and extras):
-        alert = simple(f"{handle(interaction.user)} synced the roster: {header}.", BLURPLE, "🔄 Roster Synced")
+        alert = simple(f"{handle(interaction.user)} synced the roster: {header}.", BLURPLE, "Roster Synced")
         alert.timestamp = discord.utils.utcnow()
         await post_alert(alert)
 
@@ -896,22 +896,22 @@ def preview_embed(label: str, p: dict) -> discord.Embed:
     passed = sum(r.status == "Pass" for r in results)
     failed = sum(r.status == "Fail" for r in results)
     new = sum(r.status == "Baseline" for r in results)
-    e = discord.Embed(title=f"🪙 Coin Check Preview · {label}", color=reports.AMBER,
+    e = discord.Embed(title=f"Coin Check Preview · {label}", color=reports.AMBER,
                       description="Nothing is saved until you click **Save**.")
     e.add_field(name="Matched", value=f"{len(p['matched'])} of {len(store.members())} on the roster", inline=True)
     e.add_field(name="Would Pass", value=str(passed), inline=True)
-    e.add_field(name="Would Fail", value=str(failed) + (f" · 🆕 {new}" if new else ""), inline=True)
+    e.add_field(name="Would Fail", value=str(failed) + (f" · {new} new" if new else ""), inline=True)
     if p["renames"]:
-        e.add_field(name=f"🔁 Changed Roblox Username ({len(p['renames'])})",
+        e.add_field(name=f"Changed Roblox Username ({len(p['renames'])})",
                     value=names_list([f"{o} → {n}" for o, n in p["renames"]]) +
                     "\nTheir roster entry, Discord link and history will move to the new name.", inline=False)
     if p["missing"]:
-        e.add_field(name=f"❓ Not in This Import ({len(p['missing'])})", value=names_list(p["missing"]), inline=False)
+        e.add_field(name=f"Not in This Import ({len(p['missing'])})", value=names_list(p["missing"]), inline=False)
     if p["unknown"]:
-        e.add_field(name=f"⚠️ Not on the Roster ({len(p['unknown'])})", value=names_list(p["unknown"]) +
+        e.add_field(name=f"Not on the Roster ({len(p['unknown'])})", value=names_list(p["unknown"]) +
                     "\nTheir numbers are kept in case you add them later.", inline=False)
     if not (p["renames"] or p["missing"] or p["unknown"]):
-        e.add_field(name="✅ Everything Matches", value="Every roster member is in this import.", inline=False)
+        e.add_field(name="Everything Matches", value="Every roster member is in this import.", inline=False)
     e.set_footer(text=f"{p['count']} lines read")
     return e
 
@@ -919,25 +919,25 @@ def preview_embed(label: str, p: dict) -> discord.Embed:
 def start_preview_embed(p: dict) -> discord.Embed:
     members = {m.roblox_username: m for m in store.members()}
     from_zero = sum(1 for k in p["matched"] if not (members.get(k) and members[k].start_total))
-    e = discord.Embed(title="🏁 Starting Coins Preview", color=reports.AMBER,
+    e = discord.Embed(title="Starting Coins Preview", color=reports.AMBER,
                       description="This sets each member's **starting coins** to these numbers. Nothing is graded, "
                                   "and no coin check is saved. The next coin check measures from here.\n"
                                   "Nothing is saved until you click **Save**.")
     e.add_field(name="Matched", value=f"{len(p['matched'])} of {len(members)} on the roster", inline=True)
     e.add_field(name="Currently at 0 or Blank", value=str(from_zero), inline=True)
     if p["renames"]:
-        e.add_field(name=f"🔁 Changed Roblox Username ({len(p['renames'])})",
+        e.add_field(name=f"Changed Roblox Username ({len(p['renames'])})",
                     value=names_list([f"{o} → {n}" for o, n in p["renames"]]) +
                     "\nTheir roster entry, Discord link and history will move to the new name.", inline=False)
     if p["missing"]:
-        e.add_field(name=f"❓ Not in This Import ({len(p['missing'])})", value=names_list(p["missing"]) +
+        e.add_field(name=f"Not in This Import ({len(p['missing'])})", value=names_list(p["missing"]) +
                     "\nTheir starting coins stay as they are.", inline=False)
     if p["unknown"]:
-        e.add_field(name=f"⚠️ Not on the Roster ({len(p['unknown'])})", value=names_list(p["unknown"]) +
+        e.add_field(name=f"Not on the Roster ({len(p['unknown'])})", value=names_list(p["unknown"]) +
                     "\nSkipped. Add them with `/roster add` and their number.", inline=False)
     checks = store.latest_check_id()
     if checks:
-        e.add_field(name="⚠️ Note", value=f"There's already a saved coin check (**{store.check_label(checks)}**). "
+        e.add_field(name="Note", value=f"There's already a saved coin check (**{store.check_label(checks)}**). "
                     "The next check compares with that instead of these starting coins. "
                     "Use `/coins undo` to delete old test checks first.", inline=False)
     e.set_footer(text=f"{p['count']} lines read")
@@ -956,7 +956,7 @@ class ImportConfirm(discord.ui.View):
         await interaction.response.send_message("Only the person who started this import can save it.", ephemeral=True)
         return False
 
-    @discord.ui.button(label="Save", emoji="✅", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Save", style=discord.ButtonStyle.success)
     async def save(self, interaction: discord.Interaction, _):
         if self.done:
             return
@@ -975,9 +975,9 @@ class ImportConfirm(discord.ui.View):
             await interaction.response.edit_message(embed=simple(
                 f"Set starting coins for **{len(totals)}** members." +
                 (f" Updated {len(renamed)} renamed Roblox account(s)." if renamed else "") +
-                " The next coin check measures from these numbers.", GREEN, "✅ Starting Coins Saved"), view=self)
+                " The next coin check measures from these numbers.", GREEN, "Starting Coins Saved"), view=self)
             await post_alert(simple(f"{handle(interaction.user)} set starting coins for {len(totals)} members.",
-                                    BLURPLE, "🏁 Starting Coins Updated"))
+                                    BLURPLE, "Starting Coins Updated"))
             return
         totals.update(self.p["unknown_totals"])
         cid, unknown = store.import_check(self.label, totals, str(interaction.user))
@@ -985,18 +985,18 @@ class ImportConfirm(discord.ui.View):
             item.disabled = True
         await interaction.response.edit_message(
             embed=simple(f"Saved **{self.label}**." + (f" Updated {len(renamed)} renamed Roblox account(s)." if renamed
-                         else ""), GREEN, "✅ Coin Check Saved"), view=self)
+                         else ""), GREEN, "Coin Check Saved"), view=self)
         await load_names()
         board = coin_board(cid, unknown)
         await send_board(interaction, board)           # posted in this channel for everyone
         await post_board_to_staff(board, skip_channel_id=interaction.channel_id)
 
-    @discord.ui.button(label="Cancel", emoji="❌", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger)
     async def cancel(self, interaction: discord.Interaction, _):
         self.done = True
         for item in self.children:
             item.disabled = True
-        await interaction.response.edit_message(embed=simple("Nothing was saved.", AMBER, "❌ Import Cancelled"),
+        await interaction.response.edit_message(embed=simple("Nothing was saved.", AMBER, "Import Cancelled"),
                                                 view=self)
 
 
@@ -1079,7 +1079,7 @@ async def coins_set(interaction: discord.Interaction, roblox: str, total: app_co
     else:
         extra, color = "They're not on the roster, so it won't count until they're added.", AMBER
     await interaction.response.send_message(embed=simple(
-        f"✏️ **{esc(roblox)}**: total set to {total:,} for {store.check_label(cid)}.\n{extra}", color), ephemeral=True)
+        f"**{esc(roblox)}**: total set to {total:,} for {store.check_label(cid)}.\n{extra}", color), ephemeral=True)
 
 
 @coins_group.command(name="status", description="See one member's coin history")
@@ -1117,7 +1117,7 @@ async def coins_undo(interaction: discord.Interaction, confirm: str):
             f"Nothing deleted. To delete the latest check, type its name exactly: `{label}`", AMBER), ephemeral=True)
         return
     store.delete_check(cid)
-    await interaction.response.send_message(embed=simple(f"🗑️ Deleted the coin check **{label}**."), ephemeral=True)
+    await interaction.response.send_message(embed=simple(f"Deleted the coin check **{label}**."), ephemeral=True)
 
 
 # =================================================================== /help ===
@@ -1130,7 +1130,7 @@ def help_embed(user: discord.abc.User, page: str = "home") -> discord.Embed:
         for name, value, inline in fields:
             e.add_field(name=name, value=value, inline=inline)
     elif page in help_text.CATEGORY_EMOJI:
-        e = discord.Embed(title=f"{help_text.CATEGORY_EMOJI[page]} {page}", description=help_text.category_page(page),
+        e = discord.Embed(title=page, description=help_text.category_page(page),
                           color=reports.BLURPLE)
     else:
         e = discord.Embed(title=page, description=help_text.detail(page), color=reports.BLURPLE)
@@ -1188,7 +1188,7 @@ async def help_command(interaction: discord.Interaction, public: bool = False):
 def staff_guide_embed(key: str) -> discord.Embed:
     i = next(n for n, p in enumerate(staff_guide.PAGES) if p[0] == key)
     _, emoji, title, body = staff_guide.PAGES[i]
-    e = discord.Embed(title=f"{emoji} {title}", description=body, color=reports.BLURPLE)
+    e = discord.Embed(title=title, description=body, color=reports.BLURPLE)
     e.set_author(name="[gg] Staff Guide")
     e.set_footer(text=f"Page {i + 1} of {len(staff_guide.PAGES)} · Pick a page from the menu")
     return e
@@ -1239,21 +1239,21 @@ def claninfo_message() -> tuple[discord.Embed, discord.File | None]:
     opens = int(next_signups().timestamp())
     members = [m for m in store.members() if m.roblox_username.lower() != "ggclanholder"]
     staff = sum(m.rank != "Member" for m in members)
-    e = discord.Embed(title="🏰 About the [gg] Clan", color=reports.BLURPLE, description=(
+    e = discord.Embed(title="About the [gg] Clan", color=reports.BLURPLE, description=(
         "Welcome to **[gg]**, a Roblox Bedwars clan owned by **chase**, an Anti-Cheat Manager. "
         "We're an active group that plays together, competes in clan wars and keeps building the clan up every month."))
-    e.add_field(name="📅 Next Signups (Estimate)",
+    e.add_field(name="Next Signups (Estimate)",
                 value=f"<t:{opens}:D> · <t:{opens}:R>\n-# Signups usually open on the 1st of each month.", inline=False)
-    e.add_field(name="📋 Requirements to Join", value=(
+    e.add_field(name="Requirements to Join", value=(
         "• Active in game: **Gold rank** or higher and **level 50+**\n"
         "• Good account standing: **no bans** on your account\n"
         "• Willing to take part in **clan events**, such as clan wars"), inline=False)
-    e.add_field(name="🪙 Staying in the Clan", value=(
+    e.add_field(name="Staying in the Clan", value=(
         f"Every member contributes at least **{store.get_minimum():,} coins** to the clan each month. "
         "Coin checks happen at the start of every month."), inline=False)
-    e.add_field(name="👥 Members", value=f"{len(members)}", inline=True)
-    e.add_field(name="🛡️ Staff", value=f"{staff}", inline=True)
-    e.add_field(name="📊 Clan Upgrades", value="-# Our current upgrades and clan bank:", inline=False)
+    e.add_field(name="Members", value=f"{len(members)}", inline=True)
+    e.add_field(name="Staff", value=f"{staff}", inline=True)
+    e.add_field(name="Clan Upgrades", value="-# Our current upgrades and clan bank:", inline=False)
     guild = bot.get_guild(GUILD_ID)
     if guild and guild.icon:
         e.set_thumbnail(url=guild.icon.url)
@@ -1364,9 +1364,9 @@ async def delete_custom_role(guild: discord.Guild, user_id: int, reason: str):
 
 def request_embed(member: discord.Member, primary: int, secondary: int | None,
                   current: sqlite3.Row | None) -> tuple[discord.Embed, discord.File | None]:
-    e = discord.Embed(title="🎨 Custom Role Request", color=primary,
+    e = discord.Embed(title="Custom Role Request", color=primary,
                       description=f"**{handle(member)}** is asking for a custom role.")
-    e.add_field(name="Style", value="🌈 Gradient" if secondary is not None else "🎨 Solid", inline=True)
+    e.add_field(name="Style", value="Gradient" if secondary is not None else "Solid", inline=True)
     e.add_field(name="Color", value=color_text(primary, secondary), inline=True)
     e.add_field(name="Role Name", value=f"@{esc(member.name)}", inline=True)
     if current and current["status"] == "active":
@@ -1410,7 +1410,7 @@ class CustomRoleReview(discord.ui.View):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if isinstance(interaction.user, discord.Member) and is_approver(interaction.user):
             return True
-        await interaction.response.send_message("🔒 Only admins can approve or deny custom roles.", ephemeral=True)
+        await interaction.response.send_message("Only admins can approve or deny custom roles.", ephemeral=True)
         return False
 
     async def _finish(self, interaction: discord.Interaction, title: str, color: int):
@@ -1427,7 +1427,7 @@ class CustomRoleReview(discord.ui.View):
         except discord.HTTPException:
             pass
 
-    @discord.ui.button(label="Approve", emoji="✅", style=discord.ButtonStyle.success, custom_id="gg:customrole:approve")
+    @discord.ui.button(label="Approve", style=discord.ButtonStyle.success, custom_id="gg:customrole:approve")
     async def approve(self, interaction: discord.Interaction, _):
         req = store.role_request(interaction.channel_id)
         if not req:
@@ -1454,15 +1454,15 @@ class CustomRoleReview(discord.ui.View):
                 f"⚠️ Couldn't create the role ({err.status}). Make sure the bot has **Manage Roles** and its role "
                 "is high in the role list.", ephemeral=True)
             return
-        await dm(member, "🎉 Your custom role color was approved! Enjoy your new look in **[gg] Clan**.")
+        await dm(member, "Your custom role color was approved! Enjoy your new look in **[gg] Clan**.")
         alert = simple(f"Approved for **{handle(member)}** by {handle(interaction.user)} · "
                        f"{color_text(req['primary_color'], req['secondary_color'])}",
-                       req["primary_color"], "🎨 Custom Role Approved")
+                       req["primary_color"], "Custom Role Approved")
         alert.timestamp = discord.utils.utcnow()
         await post_alert(alert)
-        await self._finish(interaction, "✅ Approved", GREEN)
+        await self._finish(interaction, "Approved", GREEN)
 
-    @discord.ui.button(label="Deny", emoji="❌", style=discord.ButtonStyle.danger, custom_id="gg:customrole:deny")
+    @discord.ui.button(label="Deny", style=discord.ButtonStyle.danger, custom_id="gg:customrole:deny")
     async def deny(self, interaction: discord.Interaction, _):
         req = store.role_request(interaction.channel_id)
         if not req:
@@ -1476,7 +1476,7 @@ class CustomRoleReview(discord.ui.View):
                 user = None
         if user:
             await dm(user, "Sorry, your custom role color was denied. Please try again later.")
-        await self._finish(interaction, "❌ Denied", RED)
+        await self._finish(interaction, "Denied", RED)
 
 
 REQUEST_COOLDOWN = dt.timedelta(days=7)
@@ -1526,7 +1526,7 @@ class ConfirmColor(discord.ui.View):
         self.stop()
         await interaction.response.edit_message(embed=embed, view=None, attachments=[])
 
-    @discord.ui.button(label="Yes, send my request", emoji="✅", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Yes, send my request", style=discord.ButtonStyle.success)
     async def confirm(self, interaction: discord.Interaction, _):
         if store.role_request_for(self.member.id) or (cooldown_ends(self.member.id)
                                                        and not self.member.guild_permissions.administrator):
@@ -1540,19 +1540,19 @@ class ConfirmColor(discord.ui.View):
             await interaction.edit_original_response(embed=simple(
                 "Sorry, something went wrong sending your request. Please let a staff member know.", RED))
             return
-        done = simple("Your request has been sent to staff. You'll get a DM once it's been looked at. 💎",
-                      self.primary, "🎨 Request Sent")
+        done = simple("Your request has been sent to staff. You'll get a DM once it's been looked at.",
+                      self.primary, "Request Sent")
         done.add_field(name="Color", value=color_text(self.primary, self.secondary), inline=True)
         done.set_footer(text="You can send another request in 7 days.")
         await interaction.edit_original_response(embed=done)
 
-    @discord.ui.button(label="Pick a different color", emoji="🎨", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Pick a different color", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, _):
         await self._close(interaction, simple(
             "No problem! Run `/customrole` again with a new color whenever you're ready.", BLURPLE))
 
 
-@bot.tree.command(name="customrole", description="💎 Boosters: request your own custom role color")
+@bot.tree.command(name="customrole", description="Boosters: request your own custom role color")
 @app_commands.guild_only()
 @app_commands.describe(color="Your role color as a hex code (e.g. #75117e)",
                        color2="Add a second color to make it a gradient (e.g. #ff7ad9)")
@@ -1561,7 +1561,7 @@ async def customrole(interaction: discord.Interaction, color: app_commands.Range
     member = interaction.user
     if not isinstance(member, discord.Member) or not member.premium_since:
         await interaction.response.send_message(embed=simple(
-            "💎 Custom roles are a perk for **server boosters**. Boost the server to unlock it!", PURPLE),
+            "Custom roles are a perk for **server boosters**. Boost the server to unlock it!", PURPLE),
             ephemeral=True)
         return
     primary, secondary = colorpreview.parse_hex(color), colorpreview.parse_hex(color2) if color2 else None
@@ -1578,12 +1578,12 @@ async def customrole(interaction: discord.Interaction, color: app_commands.Range
     if ends and not member.guild_permissions.administrator:
         await interaction.response.send_message(embed=simple(
             f"You can send one request a week. Your next one unlocks <t:{int(ends.timestamp())}:R>.",
-            AMBER, "⏳ Slow Down"), ephemeral=True)
+            AMBER, "Slow Down"), ephemeral=True)
         return
-    e = discord.Embed(title="🎨 Is this the color you want?", color=primary,
+    e = discord.Embed(title="Is this the color you want?", color=primary,
                       description="Here's how your role will look. Once you send it, you can't send another "
                                   "request for **7 days**.")
-    e.add_field(name="Style", value="🌈 Gradient" if secondary is not None else "🎨 Solid", inline=True)
+    e.add_field(name="Style", value="Gradient" if secondary is not None else "Solid", inline=True)
     e.add_field(name="Color", value=color_text(primary, secondary), inline=True)
     png = colorpreview.render(member.name, primary, secondary)
     kwargs = {}
@@ -1602,7 +1602,7 @@ async def customrole(interaction: discord.Interaction, color: app_commands.Range
 async def boostersetup(interaction: discord.Interaction, category: discord.CategoryChannel):
     store.set_setting("customrole_category", str(category.id))
     await interaction.response.send_message(embed=simple(
-        f"Custom role requests will now open in **{esc(category.name)}**.", GREEN, "💎 Booster Setup"),
+        f"Custom role requests will now open in **{esc(category.name)}**.", GREEN, "Booster Setup"),
         ephemeral=True)
 
 
@@ -1621,11 +1621,11 @@ async def check_booster(member: discord.Member):
     if not member.premium_since and saved["status"] == "active":
         await delete_custom_role(member.guild, member.id, "[gg] stopped boosting")
         await dm(member, "Your custom role in **[gg] Clan** was removed because you're no longer boosting. "
-                         "If you boost again, it'll come back automatically. 💎")
+                         "If you boost again, it'll come back automatically.")
     elif member.premium_since and saved["status"] == "removed":
         try:
             await apply_custom_role(member.guild, member, saved["primary_color"], saved["secondary_color"])
-            await dm(member, "💎 Thanks for boosting again! Your custom role is back.")
+            await dm(member, "Thanks for boosting again! Your custom role is back.")
         except discord.HTTPException:
             log.exception("Couldn't restore custom role")
 
@@ -1681,7 +1681,7 @@ async def botinfo(interaction: discord.Interaction, public: bool = False):
     ping_dot = "⚪" if ping is None else "🟢" if ping < 150 else "🟡" if ping < 400 else "🔴"
     members = store.members()
     latest = store.latest_check_id()
-    e = discord.Embed(title="🤖 [gg] Bot", color=reports.BLURPLE,
+    e = discord.Embed(title="[gg] Bot", color=reports.BLURPLE,
                       description=f"-# Online since <t:{int(STARTED_AT.timestamp())}:f>")
     e.add_field(name="Version", value=f"v{RUNNING_VERSION}", inline=True)
     e.add_field(name="Uptime", value=nice_duration((dt.datetime.now(dt.timezone.utc) - STARTED_AT).total_seconds()),
@@ -1702,12 +1702,12 @@ async def botinfo(interaction: discord.Interaction, public: bool = False):
 # ============================================================== /userinfo ===
 
 BADGES = [  # Discord's public profile badges
-    ("staff", "🛠️ Discord Staff"), ("partner", "🤝 Partnered Server Owner"),
-    ("hypesquad", "🎉 HypeSquad Events"), ("hypesquad_bravery", "🟣 HypeSquad Bravery"),
-    ("hypesquad_brilliance", "🟠 HypeSquad Brilliance"), ("hypesquad_balance", "🟢 HypeSquad Balance"),
-    ("bug_hunter", "🐛 Bug Hunter"), ("bug_hunter_level_2", "🐞 Bug Hunter Gold"),
-    ("early_supporter", "💎 Early Supporter"), ("verified_bot_developer", "🤖 Early Verified Bot Developer"),
-    ("discord_certified_moderator", "🛡️ Moderator Programs Alumni"), ("active_developer", "💻 Active Developer"),
+    ("staff", "Discord Staff"), ("partner", "Partnered Server Owner"),
+    ("hypesquad", "HypeSquad Events"), ("hypesquad_bravery", "HypeSquad Bravery"),
+    ("hypesquad_brilliance", "HypeSquad Brilliance"), ("hypesquad_balance", "HypeSquad Balance"),
+    ("bug_hunter", "Bug Hunter"), ("bug_hunter_level_2", "Bug Hunter Gold"),
+    ("early_supporter", "Early Supporter"), ("verified_bot_developer", "Early Verified Bot Developer"),
+    ("discord_certified_moderator", "Moderator Programs Alumni"), ("active_developer", "Active Developer"),
 ]
 STATUS_TEXT = {discord.Status.online: "🟢 Online", discord.Status.idle: "🌙 Idle",
                discord.Status.dnd: "⛔ Do Not Disturb", discord.Status.offline: "⚫ Offline"}
@@ -1730,20 +1730,20 @@ def userinfo_embed(member: discord.Member, full: discord.User | None, current: i
     if SHOW_STATUS:
         user.append(f"▸ Status: {STATUS_TEXT.get(member.status, '⚫ Offline')}")
     user.append(f"▸ Created: {when(member.created_at)}")
-    e.description = f"**{'💎 Nitro User' if nitro else '👤 User'}**\n" + "\n".join(user)
+    e.description = f"**{'Nitro User' if nitro else 'User'}**\n" + "\n".join(user)
 
     perms, guild = member.guild_permissions, member.guild
     acks = []
     if guild.owner_id == member.id:
-        acks.append("👑 Server Owner")
+        acks.append("Server Owner")
     elif perms.administrator:
-        acks.append("🔨 Server Admin")
+        acks.append("Server Admin")
     elif perms.manage_guild or perms.kick_members or perms.ban_members:
-        acks.append("🛡️ Server Moderator")
+        acks.append("Server Moderator")
     if member.premium_since:
-        acks.append("🚀 Server Booster")
+        acks.append("Server Booster")
     if member.bot:
-        acks.append("🤖 Bot")
+        acks.append("Bot")
     badges = [label for flag, label in BADGES if getattr(member.public_flags, flag, False)]
     e.add_field(name="Acknowledgements", value="\n".join(acks) or "None", inline=True)
     e.add_field(name="Badges", value="\n".join(badges) or "None", inline=True)
@@ -1764,29 +1764,29 @@ def userinfo_embed(member: discord.Member, full: discord.User | None, current: i
 
     m = store.member_by_discord(member.id)
     if m is None:
-        e.add_field(name="🏰 [gg] Clan", value="▸ Not a clan member\n-# Want to join? See `/claninfo`.", inline=False)
+        e.add_field(name="[gg] Clan", value="▸ Not a clan member\n-# Want to join? See `/claninfo`.", inline=False)
     else:
         minimum = store.get_minimum()
         history = store.history(m.roblox_username)
         link = (f"[{esc(m.roblox_username)}](https://www.roblox.com/users/{m.roblox_id}/profile)" if m.roblox_id
                 else esc(m.roblox_username))
         clan = [f"▸ Roblox: {link}",
-                f"▸ Rank: {m.rank}" + (" · 🛡️ Exempt from coin checks" if m.exempt else "")]
+                f"▸ Rank: {m.rank}" + (" · Exempt from coin checks" if m.exempt else "")]
         if history:
             label, total, _ = history[0]
-            clan.append(f"▸ Contribution: **{total:,}** 🪙" + ("" if label == "Joined" else f" (as of {label})"))
+            clan.append(f"▸ Contribution: **{total:,}**" + ("" if label == "Joined" else f" (as of {label})"))
         checks = [h for h in history if h[2] is not None]
         if checks and not m.exempt:
             label, _, gained = checks[0]
-            clan.append(f"▸ Last Coin Check: {label} · +{gained:,} {'✅ Passed' if gained >= minimum else '❌ Failed'}")
+            clan.append(f"▸ Last Coin Check: {label} · +{gained:,} {'Passed ✅' if gained >= minimum else 'Failed ❌'}")
         elif not m.exempt:
             clan.append(f"▸ Last Coin Check: None yet · Minimum is {minimum:,} a month")
         if current is not None and history and not m.exempt:
             last = history[0][1]
             so_far = current - last if current >= last else current   # lower = Contribution was reset
             need = max(0, minimum - so_far)
-            clan.append(f"▸ This Month So Far: +{so_far:,} · " + ("✅ Minimum reached!" if need == 0 else f"{need:,} to go"))
-        e.add_field(name="🏰 [gg] Clan", value="\n".join(clan), inline=False)
+            clan.append(f"▸ This Month So Far: +{so_far:,} · " + ("Minimum reached ✅" if need == 0 else f"{need:,} to go"))
+        e.add_field(name="[gg] Clan", value="\n".join(clan), inline=False)
 
     if full and full.banner:
         e.set_image(url=full.banner.url)
@@ -1827,14 +1827,14 @@ async def update(interaction: discord.Interaction, public: bool = False):
         log.exception("Update failed")
         await interaction.followup.send(embed=simple(
             f"Couldn't download the update, so nothing changed and the bot keeps running.\n`{e}`",
-            RED, "⚠️ Update Failed"), ephemeral=not public)
+            RED, "Update Failed"), ephemeral=not public)
         return
     new_version = read_version()
     if not result.changed:
         await interaction.followup.send(embed=simple(
-            f"You're on the newest version, **v{RUNNING_VERSION}**.", GREEN, "✅ Up to Date"), ephemeral=not public)
+            f"You're on the newest version, **v{RUNNING_VERSION}**.", GREEN, "Up to Date"), ephemeral=not public)
         return
-    e = discord.Embed(title=f"⬆️ Updating to v{new_version}", color=GREEN,
+    e = discord.Embed(title=f"Updating to v{new_version}", color=GREEN,
                       description="Restarting now. Back in a few seconds.")
     e.add_field(name="Current", value=f"v{RUNNING_VERSION}", inline=True)
     e.add_field(name="New", value=f"v{new_version}", inline=True)
@@ -1859,7 +1859,7 @@ async def status_command(interaction: discord.Interaction, text: Optional[app_co
     await bot.change_presence(status=discord.Status.online, activity=status_activity())
     await interaction.response.send_message(embed=simple(
         f"Status is now **{discord.utils.escape_markdown(text)}**." if text else "Status cleared.",
-        GREEN, "🟢 Status Updated"), ephemeral=True)
+        GREEN, "Status Updated"), ephemeral=True)
 
 
 # ================================================================ /restart ===
@@ -1871,7 +1871,7 @@ async def status_command(interaction: discord.Interaction, text: Optional[app_co
 @app_commands.guild_only()
 async def restart(interaction: discord.Interaction, public: bool = False):
     up = (dt.datetime.now(dt.timezone.utc) - STARTED_AT).total_seconds()
-    e = update_embed("🔄 Restarting", "The bot will be back in a few seconds.", reports.BLURPLE, fields=[
+    e = update_embed("Restarting", "The bot will be back in a few seconds.", reports.BLURPLE, fields=[
         ("Version", f"v{RUNNING_VERSION}", True),
         ("Was Online For", nice_duration(up), True),
     ])
@@ -1942,7 +1942,7 @@ async def weekly_report():
         return
     await load_names()
     board = await build_check(guild, "all")
-    board.title = "📋 Weekly Roster Check"
+    board.title = "Weekly Roster Check"
     await post_board_to_staff(board)
 
 
@@ -1984,7 +1984,7 @@ async def send_reminder(embed: discord.Embed) -> bool:
 def coin_reminder_embed() -> discord.Embed:
     now = dt.datetime.now(reminder_tz())
     last = store.latest_check_id()
-    e = discord.Embed(title="🪙 Coin Check Time!", color=reports.AMBER,
+    e = discord.Embed(title="Coin Check Time!", color=reports.AMBER,
                       description=f"It's the {now:%B} coin check. Grab everyone's **Contribution** numbers in game, "
                                   f"then run `/coins import label:{now:%b %Y}`.")
     e.add_field(name="Last Coin Check", value=store.check_label(last) if last else "None yet", inline=True)
@@ -1995,7 +1995,7 @@ def coin_reminder_embed() -> discord.Embed:
 
 def restart_reminder_embed() -> discord.Embed:
     up = dt.datetime.now(dt.timezone.utc) - STARTED_AT
-    e = discord.Embed(title="🔄 Restart Needed Soon", color=0xE67E22,
+    e = discord.Embed(title="Restart Needed Soon", color=0xE67E22,
                       description="The host stops the bot after "
                                   f"{RESTART_REMINDER_DAYS:g} days. Open the Wispbyte panel and press **Restart** "
                                   "(or renew the server if it asks) to keep the bot online. `/restart` may also work.")
@@ -2042,16 +2042,16 @@ async def reminders(interaction: discord.Interaction, public: bool = False):
     text, _ = ping_target(interaction.guild)
     restart = (f"{RESTART_REMINDER_HOURS_BEFORE:g} hours before {RESTART_REMINDER_DAYS:g} days online"
                if RESTART_REMINDER_DAYS > 0 else "Off · Not needed, Wispbyte doesn't stop the bot")
-    e = update_embed("⏰ Reminders", "", reports.BLURPLE, fields=[
-        ("Channel", f"<#{REMINDER_CHANNEL_ID}>" if REMINDER_CHANNEL_ID else "⚠️ Not set (REMINDER_CHANNEL_ID)", True),
-        ("Pings", text or "⚠️ Nobody (set REMINDER_PING)", True),
+    e = update_embed("Reminders", "", reports.BLURPLE, fields=[
+        ("Channel", f"<#{REMINDER_CHANNEL_ID}>" if REMINDER_CHANNEL_ID else "Not set (REMINDER_CHANNEL_ID)", True),
+        ("Pings", text or "Nobody (set REMINDER_PING)", True),
         ("Coin Check Reminder", f"<t:{int(nxt.timestamp())}:F>" if COIN_REMINDER else "Off", True),
         ("Restart Reminder", restart, False),
     ])
-    sent = await send_reminder(discord.Embed(title="🧪 Test Reminder", color=reports.BLURPLE,
+    sent = await send_reminder(discord.Embed(title="Test Reminder", color=reports.BLURPLE,
                                              description="Reminders will show up here like this.")) \
         if REMINDER_CHANNEL_ID else False
-    e.set_footer(text="✅ Test ping sent" if sent else "Couldn't send a test (check the channel setting)")
+    e.set_footer(text="Test ping sent" if sent else "Couldn't send a test (check the channel setting)")
     await interaction.followup.send(embed=e, ephemeral=not public)
 
 

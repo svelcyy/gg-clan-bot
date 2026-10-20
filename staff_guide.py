@@ -48,7 +48,7 @@ PAGES: list[tuple[str, str, str, str]] = [   # (key, emoji, title, body)
      "so re-adding them later is safe."),
     ("lookup", "🔎", "Looking Things Up",
      "**`/roster list`** · The whole roster: by contribution, A–Z, staff & exempt, and not linked. "
-     "**📄 Spreadsheet** downloads it.\n\n"
+     "**Spreadsheet** downloads it.\n\n"
      "**`/coins status`** · One member's starting coins and every check since. Good for \"did I pass?\"\n\n"
      "**`/coins results`** · The latest coin check: Everyone, Failed, Passed, Missing, New and Exempt.\n\n"
      "**`/check`** · Who needs **gg Member** or a Roblox clan role, and who has one but isn't on the roster. "

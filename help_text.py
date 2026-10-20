@@ -60,13 +60,13 @@ COMMANDS: list[HelpEntry] = [
               "gives them **gg Member** plus their rank's role in Discord, and sets their **Roblox group** role "
               "(if they're already in the group).\n"
               "**coins** is their Contribution number right now (leave it empty for 0). Their next coin check measures from it.\n"
-              "Only you see the reply. A 🆕 New Clan Member card (no pings) goes to the roster log channel."),
+              "Only you see the reply. A New Clan Member card (no pings) goes to the roster log channel."),
     HelpEntry("/roster rank", "Roster", True,
               "Change someone's clan rank (and their Discord role)",
               "/roster rank roblox:zayn rank:Officer",
               "Updates the roster and swaps their Discord rank role and Roblox group role to match. "
               "Staff keep **Clan Member** in the group as well as their staff role. "
-              "Only you see the reply. A ⬆️ Promoted / ⬇️ Demoted card (no pings) goes to the roster log channel."),
+              "Only you see the reply. A Promoted / Demoted card (no pings) goes to the roster log channel."),
     HelpEntry("/roster link", "Roster", True,
               "Link or change someone's Discord account",
               "/roster link roblox:pramishp4 discord_user:@1TAP",
@@ -78,7 +78,7 @@ COMMANDS: list[HelpEntry] = [
               "Removes them from the roster, takes away **gg Member** and their rank role in Discord, "
               "and drops them to the basic role in the Roblox group. "
               "Set **keep_roles** to True to leave their roles alone. Their coin history is kept. "
-              "Only you see the reply. A 👋 Left the Clan card (no pings) goes to the roster log channel."),
+              "Only you see the reply. A Left the Clan card (no pings) goes to the roster log channel."),
     HelpEntry("/roster start", "Roster", True,
               "Set or fix someone's starting coins",
               "/roster start roblox:pramishp4 coins:863128",
@@ -103,7 +103,7 @@ COMMANDS: list[HelpEntry] = [
               "Browse the roster",
               "/roster list",
               "Switch between by contribution, A–Z, staff & exempt and not linked. "
-              "**📄 Spreadsheet** gives you the full list as a file."),
+              "**Spreadsheet** gives you the full list as a file."),
     HelpEntry("/roster reset", "Roster", True,
               "Wipe the whole roster and every coin check (admins only)",
               "/roster reset confirm:RESET",
@@ -116,7 +116,7 @@ COMMANDS: list[HelpEntry] = [
               "(one line per member, copied from the in-game clan list).\n"
               "You get a private **preview** first: who matched, who's missing, who isn't on the roster, "
               "and anyone who changed their Roblox username (spotted by their Roblox account, so their "
-              "Discord link and history move with them). Nothing is saved until you click **✅ Save**. "
+              "Discord link and history move with them). Nothing is saved until you click **Save**. "
               "Then the results are posted here and in the staff channel. Roster and Discord data are never changed, "
               "except to update a renamed Roblox username.\n"
               "Pick **mode: Starting coins only** to set everyone's starting coins in one go instead "
@@ -201,11 +201,11 @@ def home() -> tuple[str, list[tuple[str, str, bool]]]:
     desc = ("`/help` · Shows this menu.\n"
             "Choose a category from the dropdown to see its commands.")
     half = (len(CATEGORIES) + 1) // 2
-    col = lambda cats: "\n".join(f"> {e} **{n}** · {len(in_category(n))}" for n, e, _ in cats)
-    fields = [("📚 Categories", col(CATEGORIES[:half]), True),
+    col = lambda cats: "\n".join(f"> **{n}** · {len(in_category(n))}" for n, _, _ in cats)
+    fields = [("Categories", col(CATEGORIES[:half]), True),
               ("\u200b", col(CATEGORIES[half:]), True),
-              ("📖 Guides", "> 📘 Staff Guide · `/staffguide`\n> 🏰 Clan Info · `/claninfo`", False),
-              ("🔑 Key", "> 🔒 Staff only · 👑 Clan Manager only\n"
+              ("Guides", "> Staff Guide · `/staffguide`\n> Clan Info · `/claninfo`", False),
+              ("Key", "> 🔒 Staff only · 👑 Clan Manager only\n"
                         "> Most private replies have a **public** option to show everyone.", False)]
     return desc, fields
 
@@ -222,5 +222,5 @@ def category_page(cat: str) -> str:
 def detail(name: str) -> str:
     c = next(c for c in COMMANDS if c.name == name)
     who = ("👑 Clan Manager only (needs Administrator)" if c.name in ADMIN_ONLY
-           else "🔒 Staff only (needs Manage Roles)" if c.staff else "👋 Anyone can use this")
-    return f"-# {CATEGORY_EMOJI[c.category]} {c.category} · {who}\n\n{c.details}\n\n**How to use it**\n> `{c.how}`"
+           else "🔒 Staff only (needs Manage Roles)" if c.staff else "Anyone can use this")
+    return f"-# {c.category} · {who}\n\n{c.details}\n\n**How to use it**\n> `{c.how}`"
