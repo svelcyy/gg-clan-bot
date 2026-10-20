@@ -1383,6 +1383,24 @@ def request_embed(member: discord.Member, primary: int, secondary: int | None,
     return e, file
 
 
+async def request_category(guild: discord.Guild) -> discord.CategoryChannel | None:
+    """Where request channels go: set with /boostersetup, or CUSTOMROLE_CATEGORY_ID on the host."""
+    raw = store.get_setting("customrole_category") or CUSTOMROLE_CATEGORY_ID
+    if not raw or not str(raw).strip().isdigit():
+        return None
+    cid = int(str(raw).strip())
+    channel = guild.get_channel(cid)
+    if channel is None:
+        try:
+            channel = await guild.fetch_channel(cid)
+        except discord.HTTPException:
+            channel = None
+    if not isinstance(channel, discord.CategoryChannel):
+        log.warning("Custom role category %s not found (or it isn't a category)", cid)
+        return None
+    return channel
+
+
 class CustomRoleReview(discord.ui.View):
     """Approve / Deny buttons in a request channel. Persistent, so they still work after a restart."""
 
@@ -1491,7 +1509,7 @@ async def customrole(interaction: discord.Interaction, color: app_commands.Range
     for role in approver_roles(guild):
         overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True,
                                                        read_message_history=True)
-    category = guild.get_channel(int(CUSTOMROLE_CATEGORY_ID)) if CUSTOMROLE_CATEGORY_ID else None
+    category = await request_category(guild)
     try:
         channel = await guild.create_text_channel(
             f"role-{member.name}"[:90], overwrites=overwrites,
@@ -1510,6 +1528,18 @@ async def customrole(interaction: discord.Interaction, color: app_commands.Range
                   primary, "🎨 Request Sent")
     done.add_field(name="Colour", value=color_text(primary, secondary), inline=True)
     await interaction.followup.send(embed=done, ephemeral=True)
+
+
+@bot.tree.command(name="boostersetup", description="Choose the category where custom role requests open")
+@admin_only
+@app_commands.default_permissions(administrator=True)
+@app_commands.guild_only()
+@app_commands.describe(category="The category for request channels (staff-only, ideally)")
+async def boostersetup(interaction: discord.Interaction, category: discord.CategoryChannel):
+    store.set_setting("customrole_category", str(category.id))
+    await interaction.response.send_message(embed=simple(
+        f"Custom role requests will now open in **{esc(category.name)}**.", GREEN, "💎 Booster Setup"),
+        ephemeral=True)
 
 
 @bot.event

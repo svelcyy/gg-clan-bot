@@ -4,3 +4,4 @@ clan.db
 __pycache__/
 *.new
 seed_*.csv
+.packages

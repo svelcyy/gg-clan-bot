@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 HERE = Path(__file__).parent
-PROTECTED = {".env", "clan.db", ".version"}
+PROTECTED = {".env", "clan.db", ".version", ".packages"}
 
 
 @dataclass

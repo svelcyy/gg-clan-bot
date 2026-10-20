@@ -38,6 +38,10 @@ COMMANDS: list[HelpEntry] = [
               "Your request goes to the admins with a preview, and you'll get a DM when it's approved or denied.\n"
               "The role is named after you. If you stop boosting it's removed, and it comes back automatically "
               "if you boost again. Run it again any time to ask for a new colour."),
+    HelpEntry("/boostersetup", "Boosters", True,
+              "Choose the category where custom role requests open",
+              "/boostersetup category:Staff",
+              "Request channels are created inside this category. Remembered after restarts."),
     HelpEntry("/botinfo", "General", False,
               "Bot stats: uptime, ping, version and latest changes",
               "/botinfo",
@@ -168,7 +172,7 @@ COMMANDS: list[HelpEntry] = [
 ]
 
 # Clan Manager commands: need the Administrator permission
-ADMIN_ONLY = {"/status", "/roster sync", "/roster rank", "/roster start", "/roster exempt", "/roster reset", "/coins import", "/coins set",
+ADMIN_ONLY = {"/boostersetup", "/status", "/roster sync", "/roster rank", "/roster start", "/roster exempt", "/roster reset", "/coins import", "/coins set",
               "/coins minimum", "/coins undo", "/update", "/restart", "/reminders"}
 
 # (name, emoji, one line for the menu). Order = order in the menu.
