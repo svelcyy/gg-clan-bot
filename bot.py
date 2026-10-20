@@ -1479,6 +1479,79 @@ class CustomRoleReview(discord.ui.View):
         await self._finish(interaction, "❌ Denied", RED)
 
 
+REQUEST_COOLDOWN = dt.timedelta(days=7)
+
+
+def cooldown_ends(user_id: int) -> dt.datetime | None:
+    """When this booster can send their next request, or None if they can send one now."""
+    raw = store.get_setting(f"customrole_last:{user_id}")
+    if not raw:
+        return None
+    ends = dt.datetime.fromisoformat(raw) + REQUEST_COOLDOWN
+    return ends if ends > dt.datetime.now(dt.timezone.utc) else None
+
+
+async def submit_request(interaction: discord.Interaction, member: discord.Member, primary: int,
+                         secondary: int | None) -> discord.TextChannel | None:
+    """Open the private request channel for the approvers. Returns None if it couldn't."""
+    guild = interaction.guild
+    overwrites = {guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                  guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, embed_links=True,
+                                                        attach_files=True, manage_channels=True)}
+    for role in approver_roles(guild):
+        overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True,
+                                                       read_message_history=True)
+    category = await request_category(guild)
+    try:
+        channel = await guild.create_text_channel(f"role-{member.name}"[:90], overwrites=overwrites,
+                                                  category=category, reason="[gg] custom role request")
+    except discord.HTTPException:
+        log.exception("Couldn't create the request channel")
+        return None
+    store.add_role_request(channel.id, member.id, primary, secondary)
+    store.set_setting(f"customrole_last:{member.id}", dt.datetime.now(dt.timezone.utc).isoformat())
+    embed, file = request_embed(member, primary, secondary, store.custom_role(member.id))
+    await channel.send(embed=embed, view=CustomRoleReview(), **({"file": file} if file else {}))
+    return channel
+
+
+class ConfirmColor(discord.ui.View):
+    """The booster's own preview: send the request, or go back and pick another color."""
+
+    def __init__(self, member: discord.Member, primary: int, secondary: int | None):
+        super().__init__(timeout=300)
+        self.member, self.primary, self.secondary = member, primary, secondary
+
+    async def _close(self, interaction: discord.Interaction, embed: discord.Embed):
+        self.stop()
+        await interaction.response.edit_message(embed=embed, view=None, attachments=[])
+
+    @discord.ui.button(label="Yes, send my request", emoji="✅", style=discord.ButtonStyle.success)
+    async def confirm(self, interaction: discord.Interaction, _):
+        if store.role_request_for(self.member.id) or (cooldown_ends(self.member.id)
+                                                       and not self.member.guild_permissions.administrator):
+            await self._close(interaction, simple("You've already sent a request.", AMBER))
+            return
+        await interaction.response.edit_message(embed=simple("Sending your request…", BLURPLE), view=None,
+                                                attachments=[])
+        self.stop()
+        channel = await submit_request(interaction, self.member, self.primary, self.secondary)
+        if channel is None:
+            await interaction.edit_original_response(embed=simple(
+                "Sorry, something went wrong sending your request. Please let a staff member know.", RED))
+            return
+        done = simple("Your request has been sent to staff. You'll get a DM once it's been looked at. 💎",
+                      self.primary, "🎨 Request Sent")
+        done.add_field(name="Color", value=color_text(self.primary, self.secondary), inline=True)
+        done.set_footer(text="You can send another request in 7 days.")
+        await interaction.edit_original_response(embed=done)
+
+    @discord.ui.button(label="Pick a different color", emoji="🎨", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, _):
+        await self._close(interaction, simple(
+            "No problem! Run `/customrole` again with a new color whenever you're ready.", BLURPLE))
+
+
 @bot.tree.command(name="customrole", description="💎 Boosters: request your own custom role color")
 @app_commands.guild_only()
 @app_commands.describe(color="Your role color as a hex code (e.g. #75117e)",
@@ -1501,33 +1574,24 @@ async def customrole(interaction: discord.Interaction, color: app_commands.Range
         await interaction.response.send_message(embed=simple(
             "You already have a request waiting for staff. Hang tight!", AMBER), ephemeral=True)
         return
-    await interaction.response.defer(ephemeral=True, thinking=True)
-    guild = interaction.guild
-    overwrites = {guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                  guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, embed_links=True,
-                                                        attach_files=True, manage_channels=True)}
-    for role in approver_roles(guild):
-        overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True,
-                                                       read_message_history=True)
-    category = await request_category(guild)
-    try:
-        channel = await guild.create_text_channel(
-            f"role-{member.name}"[:90], overwrites=overwrites,
-            category=category if isinstance(category, discord.CategoryChannel) else None,
-            reason="[gg] custom role request")
-    except discord.HTTPException:
-        log.exception("Couldn't create the request channel")
-        await interaction.followup.send(embed=simple(
-            "Sorry, something went wrong sending your request. Please let a staff member know.", RED), ephemeral=True)
+    ends = cooldown_ends(member.id)
+    if ends and not member.guild_permissions.administrator:
+        await interaction.response.send_message(embed=simple(
+            f"You can send one request a week. Your next one unlocks <t:{int(ends.timestamp())}:R>.",
+            AMBER, "⏳ Slow Down"), ephemeral=True)
         return
-    store.add_role_request(channel.id, member.id, primary, secondary)
-    embed, file = request_embed(member, primary, secondary, store.custom_role(member.id))
-    kwargs = {"file": file} if file else {}
-    await channel.send(embed=embed, view=CustomRoleReview(), **kwargs)
-    done = simple("Your request has been sent to staff. You'll get a DM once it's been looked at. 💎",
-                  primary, "🎨 Request Sent")
-    done.add_field(name="Color", value=color_text(primary, secondary), inline=True)
-    await interaction.followup.send(embed=done, ephemeral=True)
+    e = discord.Embed(title="🎨 Is this the color you want?", color=primary,
+                      description="Here's how your role will look. Once you send it, you can't send another "
+                                  "request for **7 days**.")
+    e.add_field(name="Style", value="🌈 Gradient" if secondary is not None else "🎨 Solid", inline=True)
+    e.add_field(name="Color", value=color_text(primary, secondary), inline=True)
+    png = colorpreview.render(member.name, primary, secondary)
+    kwargs = {}
+    if png:
+        kwargs["file"] = discord.File(png, filename="preview.png")
+        e.set_image(url="attachment://preview.png")
+    await interaction.response.send_message(embed=e, view=ConfirmColor(member, primary, secondary),
+                                            ephemeral=True, **kwargs)
 
 
 @bot.tree.command(name="boostersetup", description="Choose the category where custom role requests open")
