@@ -10,6 +10,7 @@ The bot keeps its own data in clan.db. Settings come from environment variables 
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 import datetime as dt
 import io
 import sys
@@ -24,6 +25,7 @@ from discord import app_commands
 from discord.ext import tasks
 from dotenv import load_dotenv
 
+import colorpreview
 import help_text
 import staff_guide
 import reports
@@ -71,6 +73,10 @@ WEEKLY_CHECK = env("WEEKLY_CHECK", "on").lower() in ("on", "yes", "true", "1")
 REPORT_WEEKDAY = env("REPORT_WEEKDAY", "sunday").lower()
 REPORT_HOUR_UTC = int(env("REPORT_HOUR_UTC", "17"))
 DB_PATH = env("DB_PATH", str(HERE / "clan.db"))
+# Booster custom roles: who can approve (role names or IDs, plus server admins) and where request channels go
+CUSTOMROLE_APPROVERS = [r.strip() for r in env("CUSTOMROLE_APPROVERS", "Clan Admin,Head Administrator").split(",")
+                        if r.strip()]
+CUSTOMROLE_CATEGORY_ID = env("CUSTOMROLE_CATEGORY_ID")
 # Reminders: who to ping and where. REMINDER_PING is a user ID or a role ID (right-click > Copy ID).
 REMINDER_CHANNEL_ID = env("REMINDER_CHANNEL_ID") or STAFF_CHANNEL_ID
 REMINDER_PING = env("REMINDER_PING")
@@ -442,6 +448,7 @@ class ClanBot(discord.Client):
     async def setup_hook(self):
         self.tree.add_command(roster_group)
         self.tree.add_command(coins_group)
+        self.add_view(CustomRoleReview())   # keeps Approve / Deny buttons working after restarts
         guild = discord.Object(id=GUILD_ID)
         self.tree.copy_global_to(guild=guild)
         await self.tree.sync(guild=guild)
@@ -449,6 +456,7 @@ class ClanBot(discord.Client):
         await self.tree.sync()
         if STAFF_CHANNEL_ID and WEEKLY_CHECK:
             weekly_report.start()
+        booster_sweep.start()
         if REMINDER_CHANNEL_ID and COIN_REMINDER:
             coin_reminder.start()
         if REMINDER_CHANNEL_ID and RESTART_REMINDER_DAYS > 0:
@@ -1283,6 +1291,271 @@ async def on_message(message: discord.Message):
     await message.reply("Hey there! Have any questions about the clan? Use my `/claninfo` command to see "
                         "everything there is to know about our amazing clan, as well as when the next signups are!",
                         mention_author=False, allowed_mentions=discord.AllowedMentions.none())
+
+
+# ============================================================ custom roles ===
+# Boosters ask for a custom colour (solid or gradient). A private channel opens for the approvers, who
+# click Approve or Deny. The role is named after the booster, isn't hoisted and has no permissions.
+# If they stop boosting, the role is deleted; if they boost again, it comes back automatically.
+
+def is_approver(member: discord.Member) -> bool:
+    if member.guild_permissions.administrator:
+        return True
+    return any(r in member.roles for r in approver_roles(member.guild))
+
+
+def approver_roles(guild: discord.Guild) -> list[discord.Role]:
+    return [r for r in (find_role(guild, n) for n in CUSTOMROLE_APPROVERS) if r]
+
+
+def color_text(primary: int, secondary: int | None) -> str:
+    return f"`#{primary:06X}` → `#{secondary:06X}`" if secondary is not None else f"`#{primary:06X}`"
+
+
+async def dm(user: discord.abc.User, text: str):
+    try:
+        await user.send(embed=simple(text, BLURPLE))
+    except discord.HTTPException:
+        pass   # their DMs are closed
+
+
+async def apply_custom_role(guild: discord.Guild, member: discord.Member, primary: int,
+                            secondary: int | None) -> int:
+    """Create or update the member's custom role with these colours. Returns the role id."""
+    colors = {"primary_color": primary, "secondary_color": secondary, "tertiary_color": None}
+    saved = store.custom_role(member.id)
+    role = guild.get_role(saved["role_id"]) if saved and saved["role_id"] else None
+    if role is None and saved and saved["role_id"]:
+        try:
+            role = next((r for r in await guild.fetch_roles() if r.id == saved["role_id"]), None)
+        except discord.HTTPException:
+            role = None
+    if role is not None:
+        await bot.http.request(discord.http.Route("PATCH", "/guilds/{guild_id}/roles/{role_id}",
+                                                  guild_id=guild.id, role_id=role.id),
+                               json={"name": member.name, "colors": colors}, reason="[gg] custom role update")
+        role_id = role.id
+    else:
+        data = await bot.http.create_role(guild.id, reason="[gg] booster custom role", name=member.name,
+                                          colors=colors, hoist=False, mentionable=False, permissions="0")
+        role_id = int(data["id"])
+        top = guild.me.top_role.position if guild.me else 1
+        try:   # just under the bot's own role, so the colour shows over other roles
+            await bot.http.move_role_position(guild.id, [{"id": role_id, "position": max(1, top - 1)}],
+                                              reason="[gg] booster custom role")
+        except discord.HTTPException:
+            log.warning("Couldn't move custom role %s", role_id)
+    await member.add_roles(discord.Object(role_id), reason="[gg] booster custom role")
+    store.save_custom_role(member.id, role_id, primary, secondary, "active")
+    return role_id
+
+
+async def delete_custom_role(guild: discord.Guild, user_id: int, reason: str):
+    saved = store.custom_role(user_id)
+    if not saved or saved["status"] != "active":
+        return
+    if saved["role_id"]:
+        try:
+            await bot.http.delete_role(guild.id, saved["role_id"], reason=reason)
+        except discord.HTTPException:
+            pass   # already gone
+    store.save_custom_role(user_id, None, saved["primary_color"], saved["secondary_color"], "removed")
+
+
+def request_embed(member: discord.Member, primary: int, secondary: int | None,
+                  current: sqlite3.Row | None) -> tuple[discord.Embed, discord.File | None]:
+    e = discord.Embed(title="🎨 Custom Role Request", color=primary,
+                      description=f"**{handle(member)}** is asking for a custom role.")
+    e.add_field(name="Style", value="🌈 Gradient" if secondary is not None else "🎨 Solid", inline=True)
+    e.add_field(name="Colour", value=color_text(primary, secondary), inline=True)
+    e.add_field(name="Role Name", value=f"@{esc(member.name)}", inline=True)
+    if current and current["status"] == "active":
+        e.add_field(name="Current Colour", value=color_text(current["primary_color"], current["secondary_color"]),
+                    inline=False)
+    e.set_thumbnail(url=member.display_avatar.url)
+    e.set_footer(text="Approve or deny below · Only admins can decide")
+    e.timestamp = discord.utils.utcnow()
+    file = None
+    png = colorpreview.render(member.name, primary, secondary)
+    if png:
+        file = discord.File(png, filename="preview.png")
+        e.set_image(url="attachment://preview.png")
+    return e, file
+
+
+class CustomRoleReview(discord.ui.View):
+    """Approve / Deny buttons in a request channel. Persistent, so they still work after a restart."""
+
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if isinstance(interaction.user, discord.Member) and is_approver(interaction.user):
+            return True
+        await interaction.response.send_message("🔒 Only admins can approve or deny custom roles.", ephemeral=True)
+        return False
+
+    async def _finish(self, interaction: discord.Interaction, title: str, color: int):
+        for item in self.children:
+            item.disabled = True
+        e = interaction.message.embeds[0] if interaction.message and interaction.message.embeds else simple("")
+        e.title, e.colour = title, color
+        e.set_footer(text=f"{title} by {interaction.user.name} · This channel closes in 10 seconds")
+        await interaction.response.edit_message(embed=e, view=self)
+        store.close_role_request(interaction.channel_id)
+        await asyncio.sleep(10)
+        try:
+            await interaction.channel.delete(reason="[gg] custom role request closed")
+        except discord.HTTPException:
+            pass
+
+    @discord.ui.button(label="Approve", emoji="✅", style=discord.ButtonStyle.success, custom_id="gg:customrole:approve")
+    async def approve(self, interaction: discord.Interaction, _):
+        req = store.role_request(interaction.channel_id)
+        if not req:
+            await interaction.response.send_message("This request was already handled.", ephemeral=True)
+            return
+        guild = interaction.guild
+        try:
+            member = await guild.fetch_member(req["user_id"])
+        except discord.NotFound:
+            store.close_role_request(interaction.channel_id)
+            await interaction.response.send_message("They've left the server, so there's nothing to approve.",
+                                                    ephemeral=True)
+            return
+        if not member.premium_since:
+            await interaction.response.send_message(
+                "⚠️ They're not boosting any more, so the role wasn't created. You can deny this request.",
+                ephemeral=True)
+            return
+        try:
+            await apply_custom_role(guild, member, req["primary_color"], req["secondary_color"])
+        except discord.HTTPException as err:
+            log.exception("Custom role failed")
+            await interaction.response.send_message(
+                f"⚠️ Couldn't create the role ({err.status}). Make sure the bot has **Manage Roles** and its role "
+                "is high in the role list.", ephemeral=True)
+            return
+        await dm(member, "🎉 Your custom role colour was approved! Enjoy your new look in **[gg] Clan**.")
+        alert = simple(f"Approved for **{handle(member)}** by {handle(interaction.user)} · "
+                       f"{color_text(req['primary_color'], req['secondary_color'])}",
+                       req["primary_color"], "🎨 Custom Role Approved")
+        alert.timestamp = discord.utils.utcnow()
+        await post_alert(alert)
+        await self._finish(interaction, "✅ Approved", GREEN)
+
+    @discord.ui.button(label="Deny", emoji="❌", style=discord.ButtonStyle.danger, custom_id="gg:customrole:deny")
+    async def deny(self, interaction: discord.Interaction, _):
+        req = store.role_request(interaction.channel_id)
+        if not req:
+            await interaction.response.send_message("This request was already handled.", ephemeral=True)
+            return
+        user = bot.get_user(req["user_id"])
+        if user is None:
+            try:
+                user = await bot.fetch_user(req["user_id"])
+            except discord.HTTPException:
+                user = None
+        if user:
+            await dm(user, "Sorry, your custom role color was denied. Please try again later.")
+        await self._finish(interaction, "❌ Denied", RED)
+
+
+@bot.tree.command(name="customrole", description="💎 Boosters: request your own custom role colour")
+@app_commands.guild_only()
+@app_commands.describe(color="Your colour as a hex code, e.g. #75117e",
+                       color2="Optional second colour for a gradient, e.g. #ff7ad9")
+async def customrole(interaction: discord.Interaction, color: app_commands.Range[str, 3, 7],
+                     color2: Optional[app_commands.Range[str, 3, 7]] = None):
+    member = interaction.user
+    if not isinstance(member, discord.Member) or not member.premium_since:
+        await interaction.response.send_message(embed=simple(
+            "💎 Custom roles are a perk for **server boosters**. Boost the server to unlock it!", PURPLE),
+            ephemeral=True)
+        return
+    primary, secondary = colorpreview.parse_hex(color), colorpreview.parse_hex(color2) if color2 else None
+    if primary is None or (color2 and secondary is None):
+        await interaction.response.send_message(embed=simple(
+            "That doesn't look like a colour code. Use a hex code like `#75117e`. "
+            "You can pick one at **htmlcolorcodes.com**.", AMBER), ephemeral=True)
+        return
+    if store.role_request_for(member.id):
+        await interaction.response.send_message(embed=simple(
+            "You already have a request waiting for staff. Hang tight!", AMBER), ephemeral=True)
+        return
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    guild = interaction.guild
+    overwrites = {guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                  guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, embed_links=True,
+                                                        attach_files=True, manage_channels=True)}
+    for role in approver_roles(guild):
+        overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True,
+                                                       read_message_history=True)
+    category = guild.get_channel(int(CUSTOMROLE_CATEGORY_ID)) if CUSTOMROLE_CATEGORY_ID else None
+    try:
+        channel = await guild.create_text_channel(
+            f"role-{member.name}"[:90], overwrites=overwrites,
+            category=category if isinstance(category, discord.CategoryChannel) else None,
+            reason="[gg] custom role request")
+    except discord.HTTPException:
+        log.exception("Couldn't create the request channel")
+        await interaction.followup.send(embed=simple(
+            "Sorry, something went wrong sending your request. Please let a staff member know.", RED), ephemeral=True)
+        return
+    store.add_role_request(channel.id, member.id, primary, secondary)
+    embed, file = request_embed(member, primary, secondary, store.custom_role(member.id))
+    kwargs = {"file": file} if file else {}
+    await channel.send(embed=embed, view=CustomRoleReview(), **kwargs)
+    done = simple("Your request has been sent to staff. You'll get a DM once it's been looked at. 💎",
+                  primary, "🎨 Request Sent")
+    done.add_field(name="Colour", value=color_text(primary, secondary), inline=True)
+    await interaction.followup.send(embed=done, ephemeral=True)
+
+
+@bot.event
+async def on_member_update(before: discord.Member, after: discord.Member):
+    """Unboosting removes the custom role; boosting again brings it back."""
+    if before.guild.id != GUILD_ID or bool(before.premium_since) == bool(after.premium_since):
+        return
+    await check_booster(after)
+
+
+async def check_booster(member: discord.Member):
+    saved = store.custom_role(member.id)
+    if not saved:
+        return
+    if not member.premium_since and saved["status"] == "active":
+        await delete_custom_role(member.guild, member.id, "[gg] stopped boosting")
+        await dm(member, "Your custom role in **[gg] Clan** was removed because you're no longer boosting. "
+                         "If you boost again, it'll come back automatically. 💎")
+    elif member.premium_since and saved["status"] == "removed":
+        try:
+            await apply_custom_role(member.guild, member, saved["primary_color"], saved["secondary_color"])
+            await dm(member, "💎 Thanks for boosting again! Your custom role is back.")
+        except discord.HTTPException:
+            log.exception("Couldn't restore custom role")
+
+
+@tasks.loop(hours=1)
+async def booster_sweep():
+    """Safety net: catches boosts that ended while the bot was offline, and people who left the server."""
+    guild = bot.get_guild(GUILD_ID)
+    if guild is None:
+        return
+    for row in store.custom_roles():
+        try:
+            member = await guild.fetch_member(row["user_id"])
+        except discord.NotFound:
+            await delete_custom_role(guild, row["user_id"], "[gg] booster left the server")
+            continue
+        except discord.HTTPException:
+            continue
+        await check_booster(member)
+
+
+@booster_sweep.before_loop
+async def _wait_ready_sweep():
+    await bot.wait_until_ready()
 
 
 # ============================================================= /leaderboard ===

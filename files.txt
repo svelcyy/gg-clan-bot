@@ -11,3 +11,4 @@ VERSION
 CHANGELOG.txt
 clan_stats.png
 staff_guide.py
+colorpreview.py

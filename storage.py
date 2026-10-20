@@ -37,6 +37,21 @@ CREATE TABLE IF NOT EXISTS totals (
     total           INTEGER NOT NULL,
     PRIMARY KEY (check_id, roblox_username)
 );
+CREATE TABLE IF NOT EXISTS custom_roles (
+    user_id         INTEGER PRIMARY KEY,
+    role_id         INTEGER,
+    primary_color   INTEGER NOT NULL,
+    secondary_color INTEGER,
+    status          TEXT NOT NULL,          -- active | removed (stopped boosting)
+    updated_at      TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS role_requests (
+    channel_id      INTEGER PRIMARY KEY,
+    user_id         INTEGER NOT NULL,
+    primary_color   INTEGER NOT NULL,
+    secondary_color INTEGER,
+    created_at      TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS former (
     roblox_username TEXT PRIMARY KEY COLLATE NOCASE,
     roblox_id       INTEGER,
@@ -101,6 +116,36 @@ class Store:
     def set_setting(self, key: str, value: str) -> None:
         self.db.execute("INSERT INTO settings(key,value) VALUES(?,?) "
                         "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+        self.db.commit()
+
+    # -------------------------------------------------------- custom roles --
+    def custom_role(self, user_id: int) -> sqlite3.Row | None:
+        return self.db.execute("SELECT * FROM custom_roles WHERE user_id=?", (user_id,)).fetchone()
+
+    def custom_roles(self, status: str | None = None) -> list[sqlite3.Row]:
+        if status:
+            return self.db.execute("SELECT * FROM custom_roles WHERE status=?", (status,)).fetchall()
+        return self.db.execute("SELECT * FROM custom_roles").fetchall()
+
+    def save_custom_role(self, user_id: int, role_id: int | None, primary: int, secondary: int | None,
+                         status: str = "active") -> None:
+        self.db.execute("INSERT OR REPLACE INTO custom_roles(user_id,role_id,primary_color,secondary_color,status,"
+                        "updated_at) VALUES(?,?,?,?,?,?)", (user_id, role_id, primary, secondary, status, _now()))
+        self.db.commit()
+
+    def add_role_request(self, channel_id: int, user_id: int, primary: int, secondary: int | None) -> None:
+        self.db.execute("INSERT OR REPLACE INTO role_requests VALUES(?,?,?,?,?)",
+                        (channel_id, user_id, primary, secondary, _now()))
+        self.db.commit()
+
+    def role_request(self, channel_id: int) -> sqlite3.Row | None:
+        return self.db.execute("SELECT * FROM role_requests WHERE channel_id=?", (channel_id,)).fetchone()
+
+    def role_request_for(self, user_id: int) -> sqlite3.Row | None:
+        return self.db.execute("SELECT * FROM role_requests WHERE user_id=?", (user_id,)).fetchone()
+
+    def close_role_request(self, channel_id: int) -> None:
+        self.db.execute("DELETE FROM role_requests WHERE channel_id=?", (channel_id,))
         self.db.commit()
 
     def set_minimum(self, amount: int) -> None:

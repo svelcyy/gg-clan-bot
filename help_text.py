@@ -31,6 +31,13 @@ COMMANDS: list[HelpEntry] = [
               "/leaderboard",
               "Shows every member's Discord, Roblox name, total coins and how much they gained, best first. "
               "Switch to A–Z with the menu. Everyone in the channel sees it (set **public** to False for just you)."),
+    HelpEntry("/customrole", "Boosters", False,
+              "Request your own custom role colour (solid or gradient)",
+              "/customrole color:#75117e  ·  /customrole color:#75117e color2:#ff7ad9",
+              "A perk for **server boosters**. Pick one colour for a solid role, or two for a gradient. "
+              "Your request goes to the admins with a preview, and you'll get a DM when it's approved or denied.\n"
+              "The role is named after you. If you stop boosting it's removed, and it comes back automatically "
+              "if you boost again. Run it again any time to ask for a new colour."),
     HelpEntry("/botinfo", "General", False,
               "Bot stats: uptime, ping, version and latest changes",
               "/botinfo",
@@ -167,6 +174,7 @@ ADMIN_ONLY = {"/status", "/roster sync", "/roster rank", "/roster start", "/rost
 # (name, emoji, one line for the menu). Order = order in the menu.
 CATEGORIES = [
     ("General", "👋", "Clan info, leaderboard, user info and bot stats"),
+    ("Boosters", "💎", "Perks for server boosters, like custom role colours"),
     ("Roster", "📋", "Add, remove, link and rank clan members"),
     ("Coin Checks", "🪙", "Monthly coin check results and history"),
     ("Staff Tools", "🛡️", "Role checks and the staff guide"),
