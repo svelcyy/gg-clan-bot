@@ -73,8 +73,8 @@ WEEKLY_CHECK = env("WEEKLY_CHECK", "on").lower() in ("on", "yes", "true", "1")
 REPORT_WEEKDAY = env("REPORT_WEEKDAY", "sunday").lower()
 REPORT_HOUR_UTC = int(env("REPORT_HOUR_UTC", "17"))
 DB_PATH = env("DB_PATH", str(HERE / "clan.db"))
-# Booster custom roles: who can approve (role names or IDs, plus server admins) and where request channels go
-CUSTOMROLE_APPROVERS = [r.strip() for r in env("CUSTOMROLE_APPROVERS", "Clan Admin,Head Administrator").split(",")
+# Booster custom roles: who can see and approve (role names or IDs, plus server admins) and where request channels go
+CUSTOMROLE_APPROVERS = [r.strip() for r in env("CUSTOMROLE_APPROVERS", "Clan Officer,Clan Admin,Head Administrator").split(",")
                         if r.strip()]
 CUSTOMROLE_CATEGORY_ID = env("CUSTOMROLE_CATEGORY_ID")
 # Reminders: who to ping and where. REMINDER_PING is a user ID or a role ID (right-click > Copy ID).
@@ -1373,7 +1373,7 @@ def request_embed(member: discord.Member, primary: int, secondary: int | None,
         e.add_field(name="Current Color", value=color_text(current["primary_color"], current["secondary_color"]),
                     inline=False)
     e.set_thumbnail(url=member.display_avatar.url)
-    e.set_footer(text="Approve or deny below · Only admins can decide")
+    e.set_footer(text="Approve or deny below · Clan Officers and above can decide")
     e.timestamp = discord.utils.utcnow()
     file = None
     png = colorpreview.render(member.name, primary, secondary)
@@ -1410,7 +1410,7 @@ class CustomRoleReview(discord.ui.View):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if isinstance(interaction.user, discord.Member) and is_approver(interaction.user):
             return True
-        await interaction.response.send_message("Only admins can approve or deny custom roles.", ephemeral=True)
+        await interaction.response.send_message("Only Clan Officers and above can approve or deny custom roles.", ephemeral=True)
         return False
 
     async def _finish(self, interaction: discord.Interaction, title: str, color: int):

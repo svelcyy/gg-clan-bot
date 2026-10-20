@@ -1,4 +1,5 @@
 # Newest first. Format: version | what changed
+2.23.1 | Clan Officers can now review and approve custom role requests
 2.23.0 | Cleaner panels: removed decorative emojis everywhere
 2.22.2 | /customrole shows you a preview to confirm first, one request a week, clearer wording
 2.22.1 | Fixed new packages not installing after /update (colour previews), new /boostersetup for the request category
