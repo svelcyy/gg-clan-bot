@@ -59,6 +59,13 @@ try:
 except Exception as e:
     print(f"[updater] Package check failed ({e}).", flush=True)
 
+if not (HERE / "commands" / "__init__.py").exists() and (HERE / "updater.py").exists():
+    # First start after the bot was split into a commands folder: fetch the folder if it's missing.
+    try:
+        updater.sync(repo, os.getenv("GITHUB_BRANCH", "main"), os.getenv("GITHUB_TOKEN"))
+    except Exception as e:
+        print(f"[updater] Couldn't download the commands folder ({e}).", flush=True)
+
 if not (HERE / "bot.py").exists():
     print("[updater] bot.py is missing and couldn't be downloaded. Check the line above for why "
           "(usually GitHub couldn't be reached). Restart to try again.", flush=True)

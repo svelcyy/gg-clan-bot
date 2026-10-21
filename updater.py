@@ -21,6 +21,7 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 PROTECTED = {".env", "clan.db", ".version", ".packages"}
+SUBFOLDERS = {"commands"}   # folders the updater is allowed to write into
 
 
 @dataclass
@@ -91,10 +92,13 @@ def apply_zip(data: bytes, dest: Path = HERE) -> SyncResult:
     old = current_version(dest)
     changed = []
     for name in files:
-        if name in PROTECTED or "/" in name or "\\" in name or name.startswith("."):
-            continue  # safety: only plain files in the bot folder, never secrets or data
+        parts = name.split("/")
+        if (name in PROTECTED or "\\" in name or any(p.startswith(".") or not p for p in parts)
+                or len(parts) > 2 or (len(parts) == 2 and parts[0] not in SUBFOLDERS)):
+            continue  # safety: only code files in the bot folder (or its commands folder), never secrets or data
         new = read(name)
         target = dest / name
+        target.parent.mkdir(exist_ok=True)
         if target.exists() and target.read_bytes() == new:
             continue
         tmp = target.with_name(target.name + ".new")
