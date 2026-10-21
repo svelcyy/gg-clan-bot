@@ -1,4 +1,5 @@
 # Newest first. Format: version | what changed
+2.26.0 | Custom roles go directly above a role you pick with /boostersetup above_role (like VIP); fixed roles landing just under VIP
 2.25.3 | Fixed 'The application didn't respond in time' when approving or denying custom roles
 2.25.2 | Alerts no longer repeat after restarts; the hourly booster check stops alerting about hidden role colors
 2.25.1 | Code tidy-up: removed unused code, the phone-icon status trick and /roster reset

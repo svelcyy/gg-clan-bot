@@ -60,35 +60,75 @@ async def apply_custom_role(guild: discord.Guild, member: discord.Member, primar
     return role_id, await place_custom_role(guild, member, role_id)
 
 
+def anchor_role_id() -> int | None:
+    """The role custom roles sit directly above (set with /boostersetup above_role), if any."""
+    raw = store.get_setting("customrole_anchor")
+    return int(raw) if raw and raw.isdigit() else None
+
+
+async def bot_top_role(guild: discord.Guild, roles: list[discord.Role]) -> discord.Role | None:
+    """The bot's highest role, looked up directly (the bot doesn't keep its own member details loaded)."""
+    me = guild.me
+    if me is None:
+        try:
+            me = await guild.fetch_member(bot.user.id)
+        except discord.HTTPException:
+            return None
+    held = {r.id for r in me.roles}
+    return max((r for r in roles if r.id in held), key=lambda r: r.position, default=None)
+
+
+def ladder_key(r: discord.Role) -> tuple[int, int]:
+    """Bottom-to-top order the way Discord shows it: by position, and for equal positions the older role
+    (smaller id) is higher."""
+    return r.position, -r.id
+
+
+async def move_role_above(guild: discord.Guild, roles: list[discord.Role], role: discord.Role,
+                          target: discord.Role) -> None:
+    """Put `role` directly above `target`. Sends the whole new order, because Discord breaks ties in
+    position by age, which can leave a single moved role just under the one it was meant to go above."""
+    order = sorted((r for r in roles if not r.is_default() and r.id != role.id), key=ladder_key)
+    order.insert(order.index(target) + 1, role)
+    changes = [{"id": r.id, "position": i} for i, r in enumerate(order, start=1) if r.position != i]
+    if changes:
+        await bot.http.move_role_position(guild.id, changes, reason="[gg] custom role placement")
+
+
 async def place_custom_role(guild: discord.Guild, member: discord.Member, role_id: int, alert: bool = True) -> str:
-    """Move the custom role above the member's other coloured roles, so its colour is the one that shows.
+    """Move the custom role so its color is the one that shows: directly above the role picked with
+    /boostersetup (like VIP), or, if none is picked, above the member's other colored roles.
     Returns a warning if the bot's own role is too low to do that, otherwise ""."""
     try:
         roles = await guild.fetch_roles()
     except discord.HTTPException:
         return ""
     by_id = {r.id: r for r in roles}
-    custom = by_id.get(role_id)
-    me = by_id.get(guild.me.top_role.id) if guild.me else None
+    custom, me = by_id.get(role_id), await bot_top_role(guild, roles)
     if custom is None or me is None:
         return ""
-    held = {r.id for r in member.roles}
-    colored = [r for r in roles if r.id in held and r.id != role_id and not r.is_default() and r.colour.value]
-    highest = max((r.position for r in colored), default=0)
-    if custom.position > highest:
-        return ""                                   # already on top of their other colours
-    if highest >= me.position:
-        blocker = max(colored, key=lambda r: r.position)
-        warning = (f"Their **{blocker.name}** role is above the bot's role, so its color still shows. "
-                   f"In Server Settings › Roles, drag the bot's role above **{blocker.name}**. The bot then moves "
-                   "custom roles into place by itself within an hour.")
+    aid = anchor_role_id()
+    anchor = by_id.get(aid) if aid else None
+    if anchor is None:   # no role picked: go above their highest colored role
+        held = {r.id for r in member.roles}
+        colored = [r for r in roles if r.id in held and r.id != role_id and not r.is_default() and r.colour.value]
+        anchor = max(colored, key=lambda r: r.position, default=None)
+        if anchor is None or custom.position > anchor.position:
+            return ""
+    else:
+        ladder = sorted(roles, key=ladder_key)
+        if ladder.index(custom) == ladder.index(anchor) + 1:
+            return ""   # already directly above it
+    if anchor.position >= me.position:
+        warning = (f"The **{anchor.name}** role is too close to the bot's role for the custom role to go above it. "
+                   f"In Server Settings › Roles, drag the bot's role higher than **{anchor.name}**. The bot then "
+                   "moves custom roles into place by itself within an hour.")
         if alert:   # only when a request is approved; the hourly check stays quiet about it
             await staff_alert(f"customrole-position:{member.id}", "Custom Role Color Hidden", warning,
                               every_hours=24 * 7)
         return warning
     try:
-        await bot.http.move_role_position(guild.id, [{"id": role_id, "position": highest}],   # takes their spot, they shift down
-                                          reason="[gg] custom role above their other colours")
+        await move_role_above(guild, roles, custom, anchor)
     except discord.HTTPException:
         log.warning("Couldn't move custom role %s", role_id)
     return ""
@@ -359,16 +399,37 @@ async def customrole(interaction: discord.Interaction, color: app_commands.Range
                                             ephemeral=True, **kwargs)
 
 
-@bot.tree.command(name="boostersetup", description="Choose the category where custom role requests open")
+@bot.tree.command(name="boostersetup", description="Booster settings: where requests open and where custom roles go")
 @admin_only
 @app_commands.default_permissions(administrator=True)
 @app_commands.guild_only()
-@app_commands.describe(category="The category for request channels (staff-only, ideally)")
-async def boostersetup(interaction: discord.Interaction, category: discord.CategoryChannel):
-    store.set_setting("customrole_category", str(category.id))
-    await interaction.response.send_message(embed=simple(
-        f"Custom role requests will now open in **{esc(category.name)}**.", GREEN, "💎 Booster Setup"),
-        ephemeral=True)
+@app_commands.describe(category="The category for request channels (staff-only, ideally)",
+                       above_role="Custom roles always sit directly above this role (e.g. VIP)")
+async def boostersetup(interaction: discord.Interaction, category: Optional[discord.CategoryChannel] = None,
+                       above_role: Optional[discord.Role] = None):
+    await interaction.response.defer(ephemeral=True)
+    if category:
+        store.set_setting("customrole_category", str(category.id))
+    moved = 0
+    if above_role:
+        store.set_setting("customrole_anchor", str(above_role.id))
+        for row in store.custom_roles("active"):   # move everyone's existing custom role into place now
+            try:
+                member = await interaction.guild.fetch_member(row["user_id"])
+            except discord.HTTPException:
+                continue
+            if row["role_id"] and not await place_custom_role(interaction.guild, member, row["role_id"], alert=False):
+                moved += 1
+    cat = await request_category(interaction.guild)
+    anchor = interaction.guild.get_role(anchor_role_id() or 0)
+    e = simple("", GREEN, "💎 Booster Setup")
+    e.add_field(name="Request Channels", value=f"In **{esc(cat.name)}**" if cat else "Not set (top of the channel list)",
+                inline=False)
+    e.add_field(name="Custom Roles Sit Above", value=anchor.mention if anchor else
+                "Not set (above each booster's other colored roles)", inline=False)
+    if above_role:
+        e.set_footer(text=f"Checked {moved} existing custom role(s)")
+    await interaction.followup.send(embed=e, ephemeral=True)
 
 
 @bot.event

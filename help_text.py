@@ -40,9 +40,11 @@ COMMANDS: list[HelpEntry] = [
               "The role is named after you. If you stop boosting it's removed, and it comes back automatically "
               "if you boost again. Run it again any time to ask for a new color."),
     HelpEntry("/boostersetup", "Boosters", True,
-              "Choose the category where custom role requests open",
-              "/boostersetup category:Staff",
-              "Request channels are created inside this category. Remembered after restarts."),
+              "Booster settings: where requests open and where custom roles go",
+              "/boostersetup category:Staff above_role:@VIP",
+              "**category** is where request channels are created. **above_role** is the role custom roles "
+              "always sit directly above (for example VIP), so their color shows without going above staff roles. "
+              "Run it with no options to see the current settings."),
     HelpEntry("/botinfo", "General", False,
               "Bot stats: uptime, ping, version and latest changes",
               "/botinfo",
