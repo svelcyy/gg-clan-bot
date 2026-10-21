@@ -60,7 +60,7 @@ async def apply_custom_role(guild: discord.Guild, member: discord.Member, primar
     return role_id, await place_custom_role(guild, member, role_id)
 
 
-async def place_custom_role(guild: discord.Guild, member: discord.Member, role_id: int) -> str:
+async def place_custom_role(guild: discord.Guild, member: discord.Member, role_id: int, alert: bool = True) -> str:
     """Move the custom role above the member's other coloured roles, so its colour is the one that shows.
     Returns a warning if the bot's own role is too low to do that, otherwise ""."""
     try:
@@ -79,10 +79,12 @@ async def place_custom_role(guild: discord.Guild, member: discord.Member, role_i
         return ""                                   # already on top of their other colours
     if highest >= me.position:
         blocker = max(colored, key=lambda r: r.position)
-        warning = (f"Their **{blocker.name}** role is above the bot's role, so its colour still shows. "
+        warning = (f"Their **{blocker.name}** role is above the bot's role, so its color still shows. "
                    f"In Server Settings › Roles, drag the bot's role above **{blocker.name}**. The bot then moves "
                    "custom roles into place by itself within an hour.")
-        await staff_alert("customrole-position", "Custom Role Colours Are Hidden", warning, every_hours=24)
+        if alert:   # only when a request is approved; the hourly check stays quiet about it
+            await staff_alert(f"customrole-position:{member.id}", "Custom Role Color Hidden", warning,
+                              every_hours=24 * 7)
         return warning
     try:
         await bot.http.move_role_position(guild.id, [{"id": role_id, "position": highest}],   # takes their spot, they shift down
@@ -390,7 +392,7 @@ async def booster_sweep():
         await check_booster(member)
         saved = store.custom_role(member.id)
         if saved and saved["status"] == "active" and saved["role_id"] and member.premium_since:
-            await place_custom_role(guild, member, saved["role_id"])   # keep it above their other colours
+            await place_custom_role(guild, member, saved["role_id"], alert=False)   # keep it on top, quietly
 
 
 booster_sweep.before_loop(wait_ready)

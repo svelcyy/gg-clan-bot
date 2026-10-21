@@ -305,15 +305,15 @@ async def post_alert(embed: discord.Embed, skip_channel_id: int | None = None):
         log.exception("Couldn't post to the roster log channel")
 
 
-_last_alert: dict[str, float] = {}
 
 
 async def staff_alert(key: str, title: str, text: str, every_hours: float = 6):
     """Tell staff something is broken, at most once every few hours per problem (so it never spams)."""
-    now = asyncio.get_running_loop().time()
-    if now - _last_alert.get(key, -1e9) < every_hours * 3600:
+    now = dt.datetime.now(dt.timezone.utc)
+    last = store.get_setting(f"alert:{key}")   # saved, so restarts and updates don't repeat the alert
+    if last and now - dt.datetime.fromisoformat(last) < dt.timedelta(hours=every_hours):
         return
-    _last_alert[key] = now
+    store.set_setting(f"alert:{key}", now.isoformat())
     channel_id = STAFF_CHANNEL_ID or ROSTER_LOG_CHANNEL_ID
     channel = bot.get_channel(int(channel_id)) if channel_id else None
     if channel is None:
