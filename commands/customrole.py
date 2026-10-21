@@ -163,65 +163,85 @@ class CustomRoleReview(discord.ui.View):
         e = interaction.message.embeds[0] if interaction.message and interaction.message.embeds else simple("")
         e.title, e.colour = title, color
         e.set_footer(text=f"{title} by {interaction.user.name} · This channel closes in 10 seconds")
-        await interaction.response.edit_message(embed=e, view=self)
         store.close_role_request(interaction.channel_id)
+        try:
+            await interaction.edit_original_response(embed=e, view=self)
+        except discord.HTTPException:
+            pass
         await asyncio.sleep(10)
         try:
             await interaction.channel.delete(reason="[gg] custom role request closed")
         except discord.HTTPException:
             pass
 
+    async def _start(self, interaction: discord.Interaction):
+        """Answer Discord straight away (it gives up after 3 seconds) and claim the request so a double
+        click can't handle it twice. Returns the request, or None if someone already handled it."""
+        await interaction.response.defer()
+        req = store.role_request(interaction.channel_id)
+        if not req or interaction.channel_id in _handling:
+            await interaction.followup.send("This request was already handled.", ephemeral=True)
+            return None
+        _handling.add(interaction.channel_id)
+        return req
+
     @discord.ui.button(label="Approve", style=discord.ButtonStyle.success, custom_id="gg:customrole:approve")
     async def approve(self, interaction: discord.Interaction, _):
-        req = store.role_request(interaction.channel_id)
+        req = await self._start(interaction)
         if not req:
-            await interaction.response.send_message("This request was already handled.", ephemeral=True)
-            return
-        guild = interaction.guild
-        try:
-            member = await guild.fetch_member(req["user_id"])
-        except discord.NotFound:
-            store.close_role_request(interaction.channel_id)
-            await interaction.response.send_message("They've left the server, so there's nothing to approve.",
-                                                    ephemeral=True)
-            return
-        if not member.premium_since:
-            await interaction.response.send_message(
-                "⚠️ They're not boosting any more, so the role wasn't created. You can deny this request.",
-                ephemeral=True)
             return
         try:
-            _, warning = await apply_custom_role(guild, member, req["primary_color"], req["secondary_color"])
-        except discord.HTTPException as err:
-            log.exception("Custom role failed")
-            await interaction.response.send_message(
-                f"⚠️ Couldn't create the role ({err.status}). Make sure the bot has **Manage Roles** and its role "
-                "is high in the role list.", ephemeral=True)
-            return
-        await dm(member, "Your custom role color was approved! Enjoy your new look in **[gg] Clan**.")
-        alert = simple(f"Approved for **{handle(member)}** by {handle(interaction.user)} · "
-                       f"{color_text(req['primary_color'], req['secondary_color'])}",
-                       req["primary_color"], "🎨 Custom Role Approved")
-        await post_alert(alert)
-        if warning:
-            await interaction.channel.send(embed=simple(warning, AMBER, "⚠️ Color Hidden"))
-        await self._finish(interaction, "✅ Approved", GREEN)
+            guild = interaction.guild
+            try:
+                member = await guild.fetch_member(req["user_id"])
+            except discord.NotFound:
+                await interaction.followup.send("They've left the server, so there's nothing to approve.",
+                                                ephemeral=True)
+                await self._finish(interaction, "❌ Closed (left the server)", RED)
+                return
+            if not member.premium_since:
+                await interaction.followup.send(
+                    "⚠️ They're not boosting any more, so the role wasn't created. You can deny this request.",
+                    ephemeral=True)
+                return
+            try:
+                _, warning = await apply_custom_role(guild, member, req["primary_color"], req["secondary_color"])
+            except discord.HTTPException as err:
+                log.exception("Custom role failed")
+                await interaction.followup.send(
+                    f"⚠️ Couldn't create the role ({err.status}). Make sure the bot has **Manage Roles** and its "
+                    "role is high in the role list.", ephemeral=True)
+                return
+            await dm(member, "Your custom role color was approved! Enjoy your new look in **[gg] Clan**.")
+            await post_alert(simple(f"Approved for **{handle(member)}** by {handle(interaction.user)} · "
+                                    f"{color_text(req['primary_color'], req['secondary_color'])}",
+                                    req["primary_color"], "🎨 Custom Role Approved"))
+            if warning:
+                await interaction.channel.send(embed=simple(warning, AMBER, "⚠️ Color Hidden"))
+            await self._finish(interaction, "✅ Approved", GREEN)
+        finally:
+            _handling.discard(interaction.channel_id)
 
     @discord.ui.button(label="Deny", style=discord.ButtonStyle.danger, custom_id="gg:customrole:deny")
     async def deny(self, interaction: discord.Interaction, _):
-        req = store.role_request(interaction.channel_id)
+        req = await self._start(interaction)
         if not req:
-            await interaction.response.send_message("This request was already handled.", ephemeral=True)
             return
-        user = bot.get_user(req["user_id"])
-        if user is None:
-            try:
-                user = await bot.fetch_user(req["user_id"])
-            except discord.HTTPException:
-                user = None
-        if user:
-            await dm(user, "Sorry, your custom role color was denied. Please try again later.")
-        await self._finish(interaction, "❌ Denied", RED)
+        try:
+            user = bot.get_user(req["user_id"])
+            if user is None:
+                try:
+                    user = await bot.fetch_user(req["user_id"])
+                except discord.HTTPException:
+                    user = None
+            if user:
+                await dm(user, "Sorry, your custom role color was denied. Please try again later.")
+            await self._finish(interaction, "❌ Denied", RED)
+        finally:
+            _handling.discard(interaction.channel_id)
+
+
+_handling: set[int] = set()   # request channels being approved or denied right now
 
 
 REQUEST_COOLDOWN = dt.timedelta(days=7)
