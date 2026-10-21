@@ -1372,8 +1372,8 @@ async def dm(user: discord.abc.User, text: str):
 
 
 async def apply_custom_role(guild: discord.Guild, member: discord.Member, primary: int,
-                            secondary: int | None) -> int:
-    """Create or update the member's custom role with these colours. Returns the role id."""
+                            secondary: int | None) -> tuple[int, str]:
+    """Create or update the member's custom role with these colours. Returns (role id, warning or "")."""
     colors = {"primary_color": primary, "secondary_color": secondary, "tertiary_color": None}
     saved = store.custom_role(member.id)
     role = guild.get_role(saved["role_id"]) if saved and saved["role_id"] else None
@@ -1391,15 +1391,41 @@ async def apply_custom_role(guild: discord.Guild, member: discord.Member, primar
         data = await bot.http.create_role(guild.id, reason="[gg] booster custom role", name=member.name,
                                           colors=colors, hoist=False, mentionable=False, permissions="0")
         role_id = int(data["id"])
-        top = guild.me.top_role.position if guild.me else 1
-        try:   # just under the bot's own role, so the colour shows over other roles
-            await bot.http.move_role_position(guild.id, [{"id": role_id, "position": max(1, top - 1)}],
-                                              reason="[gg] booster custom role")
-        except discord.HTTPException:
-            log.warning("Couldn't move custom role %s", role_id)
     await member.add_roles(discord.Object(role_id), reason="[gg] booster custom role")
     store.save_custom_role(member.id, role_id, primary, secondary, "active")
-    return role_id
+    return role_id, await place_custom_role(guild, member, role_id)
+
+
+async def place_custom_role(guild: discord.Guild, member: discord.Member, role_id: int) -> str:
+    """Move the custom role above the member's other coloured roles, so its colour is the one that shows.
+    Returns a warning if the bot's own role is too low to do that, otherwise ""."""
+    try:
+        roles = await guild.fetch_roles()
+    except discord.HTTPException:
+        return ""
+    by_id = {r.id: r for r in roles}
+    custom = by_id.get(role_id)
+    me = by_id.get(guild.me.top_role.id) if guild.me else None
+    if custom is None or me is None:
+        return ""
+    held = {r.id for r in member.roles}
+    colored = [r for r in roles if r.id in held and r.id != role_id and not r.is_default() and r.colour.value]
+    highest = max((r.position for r in colored), default=0)
+    if custom.position > highest:
+        return ""                                   # already on top of their other colours
+    if highest >= me.position:
+        blocker = max(colored, key=lambda r: r.position)
+        warning = (f"Their **{blocker.name}** role is above the bot's role, so its colour still shows. "
+                   f"In Server Settings › Roles, drag the bot's role above **{blocker.name}**. The bot then moves "
+                   "custom roles into place by itself within an hour.")
+        await staff_alert("customrole-position", "Custom Role Colours Are Hidden", warning, every_hours=24)
+        return warning
+    try:
+        await bot.http.move_role_position(guild.id, [{"id": role_id, "position": highest}],   # takes their spot, they shift down
+                                          reason="[gg] custom role above their other colours")
+    except discord.HTTPException:
+        log.warning("Couldn't move custom role %s", role_id)
+    return ""
 
 
 async def delete_custom_role(guild: discord.Guild, user_id: int, reason: str):
@@ -1499,7 +1525,7 @@ class CustomRoleReview(discord.ui.View):
                 ephemeral=True)
             return
         try:
-            await apply_custom_role(guild, member, req["primary_color"], req["secondary_color"])
+            _, warning = await apply_custom_role(guild, member, req["primary_color"], req["secondary_color"])
         except discord.HTTPException as err:
             log.exception("Custom role failed")
             await interaction.response.send_message(
@@ -1512,6 +1538,8 @@ class CustomRoleReview(discord.ui.View):
                        req["primary_color"], "🎨 Custom Role Approved")
         alert.timestamp = discord.utils.utcnow()
         await post_alert(alert)
+        if warning:
+            await interaction.channel.send(embed=simple(warning, AMBER, "⚠️ Color Hidden"))
         await self._finish(interaction, "✅ Approved", GREEN)
 
     @discord.ui.button(label="Deny", style=discord.ButtonStyle.danger, custom_id="gg:customrole:deny")
@@ -1697,6 +1725,9 @@ async def booster_sweep():
         except discord.HTTPException:
             continue
         await check_booster(member)
+        saved = store.custom_role(member.id)
+        if saved and saved["status"] == "active" and saved["role_id"] and member.premium_since:
+            await place_custom_role(guild, member, saved["role_id"])   # keep it above their other colours
 
 
 @booster_sweep.before_loop
