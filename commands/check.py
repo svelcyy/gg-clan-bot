@@ -66,9 +66,7 @@ async def weekly_report():
     await post_board_to_staff(board)
 
 
-@weekly_report.before_loop
-async def _wait_ready():
-    await bot.wait_until_ready()
+weekly_report.before_loop(wait_ready)
 
 
 BACKGROUND_TASKS.append((weekly_report, lambda: bool(STAFF_CHANNEL_ID and WEEKLY_CHECK)))

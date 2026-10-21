@@ -63,10 +63,8 @@ async def restart_reminder():
         _restart_reminded = await send_reminder(restart_reminder_embed())
 
 
-@coin_reminder.before_loop
-@restart_reminder.before_loop
-async def _wait_ready_reminders():
-    await bot.wait_until_ready()
+coin_reminder.before_loop(wait_ready)
+restart_reminder.before_loop(wait_ready)
 
 
 @app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")

@@ -1,6 +1,9 @@
 """/customrole and /boostersetup: booster custom roles, plus the hourly booster check."""
 from __future__ import annotations
 
+import colorpreview
+import sqlite3
+
 from core import *  # noqa: F401,F403  (shared settings, bot, database and helpers)
 
 # Boosters ask for a custom colour (solid or gradient). A private channel opens for the approvers, who
@@ -8,7 +11,7 @@ from core import *  # noqa: F401,F403  (shared settings, bot, database and helpe
 # If they stop boosting, the role is deleted; if they boost again, it comes back automatically.
 
 def is_approver(member: discord.Member) -> bool:
-    if member.guild_permissions.administrator:
+    if is_admin(member):
         return True
     return any(r in member.roles for r in approver_roles(member.guild))
 
@@ -197,7 +200,6 @@ class CustomRoleReview(discord.ui.View):
         alert = simple(f"Approved for **{handle(member)}** by {handle(interaction.user)} · "
                        f"{color_text(req['primary_color'], req['secondary_color'])}",
                        req["primary_color"], "🎨 Custom Role Approved")
-        alert.timestamp = discord.utils.utcnow()
         await post_alert(alert)
         if warning:
             await interaction.channel.send(embed=simple(warning, AMBER, "⚠️ Color Hidden"))
@@ -270,7 +272,7 @@ class ConfirmColor(discord.ui.View):
     @discord.ui.button(label="Yes, send my request", style=discord.ButtonStyle.success)
     async def confirm(self, interaction: discord.Interaction, _):
         if store.role_request_for(self.member.id) or (cooldown_ends(self.member.id)
-                                                       and not self.member.guild_permissions.administrator):
+                                                       and not is_admin(self.member)):
             await self._close(interaction, simple("You've already sent a request.", AMBER))
             return
         await interaction.response.edit_message(embed=simple("Sending your request…", BLURPLE), view=None,
@@ -316,7 +318,7 @@ async def customrole(interaction: discord.Interaction, color: app_commands.Range
             "You already have a request waiting for staff. Hang tight!", AMBER), ephemeral=True)
         return
     ends = cooldown_ends(member.id)
-    if ends and not member.guild_permissions.administrator:
+    if ends and not is_admin(member):
         await interaction.response.send_message(embed=simple(
             f"You can send one request a week. Your next one unlocks <t:{int(ends.timestamp())}:R>.",
             AMBER, "⏳ Slow Down"), ephemeral=True)
@@ -391,9 +393,7 @@ async def booster_sweep():
             await place_custom_role(guild, member, saved["role_id"])   # keep it above their other colours
 
 
-@booster_sweep.before_loop
-async def _wait_ready_sweep():
-    await bot.wait_until_ready()
+booster_sweep.before_loop(wait_ready)
 
 
 PERSISTENT_VIEWS.append(CustomRoleReview)

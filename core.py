@@ -4,7 +4,6 @@ embeds, role syncing and alerts. Commands live in the commands folder, one file 
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 import datetime as dt
 import io
 import sys
@@ -20,12 +19,8 @@ from discord import app_commands
 from discord.ext import tasks
 from dotenv import load_dotenv
 
-import colorpreview
-import help_text
-import staff_guide
 import reports
 import roblox as rbx
-import updater
 from reports import AMBER, BLURPLE, GREEN, PURPLE, RED, Board, esc
 from storage import RANKS, Store, match_totals, parse_totals_csv
 
@@ -155,9 +150,13 @@ class NotAdmin(app_commands.CheckFailure):
     pass
 
 
+def is_admin(user) -> bool:
+    perms = getattr(user, "guild_permissions", None)
+    return bool(perms and perms.administrator)
+
+
 def _is_admin(interaction: discord.Interaction) -> bool:
-    perms = getattr(interaction.user, "guild_permissions", None)
-    if perms and perms.administrator:
+    if is_admin(interaction.user):
         return True
     raise NotAdmin()
 
@@ -173,6 +172,15 @@ store = Store(DB_PATH)
 
 def simple(text: str, color: int = GREEN, title: str | None = None) -> discord.Embed:
     return discord.Embed(title=title, description=text, color=color)
+
+
+def not_on_roster(name: str, extra: str = "") -> discord.Embed:
+    return simple(f"**{esc(name)}** isn't on the roster.{extra}", AMBER)
+
+
+async def wait_ready():
+    """Background tasks wait for the bot to log in before their first run."""
+    await bot.wait_until_ready()
 
 
 def csv_file(text: str, name: str) -> discord.File:
@@ -292,6 +300,7 @@ async def post_alert(embed: discord.Embed, skip_channel_id: int | None = None):
         log.warning("ROSTER_LOG_CHANNEL_ID %s not found", ROSTER_LOG_CHANNEL_ID)
         return
     try:
+        embed.timestamp = embed.timestamp or discord.utils.utcnow()
         await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
     except discord.HTTPException:
         log.exception("Couldn't post to the roster log channel")

@@ -48,29 +48,34 @@ async def prepare_import(text: str) -> dict | None:
             "unknown_totals": {u: totals[u] for u in unknown}, "count": len(totals)}
 
 
-def preview_embed(label: str, p: dict) -> discord.Embed:
-    results = store.preview(p["matched"])
-    passed = sum(r.status == "Pass" for r in results)
-    failed = sum(r.status == "Fail" for r in results)
-    new = sum(r.status == "Baseline" for r in results)
-    e = discord.Embed(title=f"🪙 Coin Check Preview · {label}", color=reports.AMBER,
-                      description="Nothing is saved until you click **Save**.")
-    e.add_field(name="Matched", value=f"{len(p['matched'])} of {len(store.members())} on the roster", inline=True)
-    e.add_field(name="Would Pass", value=str(passed), inline=True)
-    e.add_field(name="Would Fail", value=str(failed) + (f" · {new} new" if new else ""), inline=True)
+def _match_fields(e: discord.Embed, p: dict, missing_note: str, unknown_note: str):
+    """The renamed / missing / not-on-roster fields both previews share."""
     if p["renames"]:
         e.add_field(name=f"Changed Roblox Username ({len(p['renames'])})",
                     value=names_list([f"{o} → {n}" for o, n in p["renames"]]) +
                     "\nTheir roster entry, Discord link and history will move to the new name.", inline=False)
     if p["missing"]:
-        e.add_field(name=f"Not in This Import ({len(p['missing'])})", value=names_list(p["missing"]), inline=False)
+        e.add_field(name=f"Not in This Import ({len(p['missing'])})",
+                    value=names_list(p["missing"]) + missing_note, inline=False)
     if p["unknown"]:
-        e.add_field(name=f"Not on the Roster ({len(p['unknown'])})", value=names_list(p["unknown"]) +
-                    "\nTheir numbers are kept in case you add them later.", inline=False)
-    if not (p["renames"] or p["missing"] or p["unknown"]):
-        e.add_field(name="Everything Matches", value="Every roster member is in this import.", inline=False)
+        e.add_field(name=f"Not on the Roster ({len(p['unknown'])})",
+                    value=names_list(p["unknown"]) + unknown_note, inline=False)
     e.set_footer(text=f"{p['count']} lines read")
     return e
+
+
+def preview_embed(label: str, p: dict) -> discord.Embed:
+    results = store.preview(p["matched"])
+    count = lambda status: sum(r.status == status for r in results)   # noqa: E731
+    e = discord.Embed(title=f"🪙 Coin Check Preview · {label}", color=reports.AMBER,
+                      description="Nothing is saved until you click **Save**.")
+    e.add_field(name="Matched", value=f"{len(p['matched'])} of {len(store.members())} on the roster", inline=True)
+    e.add_field(name="Would Pass", value=str(count("Pass")), inline=True)
+    e.add_field(name="Would Fail", value=str(count("Fail")) + (f" · {count('Baseline')} new" if count("Baseline")
+                                                                 else ""), inline=True)
+    if not (p["renames"] or p["missing"] or p["unknown"]):
+        e.add_field(name="Everything Matches", value="Every roster member is in this import.", inline=False)
+    return _match_fields(e, p, "", "\nTheir numbers are kept in case you add them later.")
 
 
 def start_preview_embed(p: dict) -> discord.Embed:
@@ -82,22 +87,13 @@ def start_preview_embed(p: dict) -> discord.Embed:
                                   "Nothing is saved until you click **Save**.")
     e.add_field(name="Matched", value=f"{len(p['matched'])} of {len(members)} on the roster", inline=True)
     e.add_field(name="Currently at 0 or Blank", value=str(from_zero), inline=True)
-    if p["renames"]:
-        e.add_field(name=f"Changed Roblox Username ({len(p['renames'])})",
-                    value=names_list([f"{o} → {n}" for o, n in p["renames"]]) +
-                    "\nTheir roster entry, Discord link and history will move to the new name.", inline=False)
-    if p["missing"]:
-        e.add_field(name=f"Not in This Import ({len(p['missing'])})", value=names_list(p["missing"]) +
-                    "\nTheir starting coins stay as they are.", inline=False)
-    if p["unknown"]:
-        e.add_field(name=f"Not on the Roster ({len(p['unknown'])})", value=names_list(p["unknown"]) +
-                    "\nSkipped. Add them with `/roster add` and their number.", inline=False)
+    _match_fields(e, p, "\nTheir starting coins stay as they are.",
+                  "\nSkipped. Add them with `/roster add` and their number.")
     checks = store.latest_check_id()
     if checks:
         e.add_field(name="Note", value=f"There's already a saved coin check (**{store.check_label(checks)}**). "
                     "The next check compares with that instead of these starting coins. "
                     "Use `/coins undo` to delete old test checks first.", inline=False)
-    e.set_footer(text=f"{p['count']} lines read")
     return e
 
 
@@ -244,7 +240,7 @@ async def coins_set(interaction: discord.Interaction, roblox: str, total: app_co
 async def coins_status(interaction: discord.Interaction, roblox: str):
     m = store.get_member(roblox)
     if not m:
-        await interaction.response.send_message(embed=simple(f"**{esc(roblox)}** isn't on the roster.", AMBER),
+        await interaction.response.send_message(embed=not_on_roster(roblox),
                                                 ephemeral=True)
         return
     title, desc, color = reports.member_status(m, store.history(m.roblox_username), store.get_minimum())

@@ -28,12 +28,7 @@ SUBFOLDERS = {"commands"}   # folders the updater is allowed to write into
 class SyncResult:
     old_sha: str
     new_sha: str
-    message: str = ""
     changed: list[str] = field(default_factory=list)
-
-    @property
-    def updated(self) -> bool:
-        return bool(self.changed)
 
 
 def current_version(dest: Path = HERE) -> str:
@@ -106,7 +101,7 @@ def apply_zip(data: bytes, dest: Path = HERE) -> SyncResult:
         os.replace(tmp, target)
         changed.append(name)
     (dest / ".version").write_text(sha)
-    return SyncResult(old, sha, "", changed)
+    return SyncResult(old, sha, changed)
 
 
 def sync(repo: str, branch: str = "main", token: str | None = None, dest: Path = HERE) -> SyncResult:

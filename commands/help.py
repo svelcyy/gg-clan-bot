@@ -1,6 +1,8 @@
 """/help: the category menu."""
 from __future__ import annotations
 
+import help_text
+
 from core import *  # noqa: F401,F403  (shared settings, bot, database and helpers)
 
 def help_embed(user: discord.abc.User, page: str = "home") -> discord.Embed:

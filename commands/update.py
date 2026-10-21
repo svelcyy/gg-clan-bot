@@ -1,6 +1,8 @@
 """/update: download the newest version and restart."""
 from __future__ import annotations
 
+import updater
+
 from core import *  # noqa: F401,F403  (shared settings, bot, database and helpers)
 
 @app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")

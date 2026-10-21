@@ -211,23 +211,11 @@ class Store:
         self.db.commit()
         return cur.rowcount > 0
 
-    def last_known(self, roblox_username: str, roblox_id: int | None = None) -> dict | None:
-        """What we knew about someone who was on the roster before: their latest coins and Discord link."""
-        names = {roblox_username.strip().lower()}
-        row = None
-        if roblox_id:
-            row = self.db.execute("SELECT * FROM former WHERE roblox_id=? ORDER BY removed_at DESC LIMIT 1",
-                                  (roblox_id,)).fetchone()
-        row = row or self.db.execute("SELECT * FROM former WHERE roblox_username=?", (roblox_username.strip(),)).fetchone()
-        if row:
-            names.add(row["roblox_username"].lower())
-        q = ",".join("?" * len(names))
-        best = self.db.execute(f"SELECT MAX(total) AS t FROM totals WHERE lower(roblox_username) IN ({q})",
-                               tuple(names)).fetchone()["t"]
-        coins = max([v for v in (best, row["start_total"] if row else None) if v is not None], default=None)
-        if row is None and coins is None:
-            return None
-        return {"coins": coins, "discord_id": row["discord_id"] if row else None}
+    def former_discord_id(self, roblox_username: str, roblox_id: int | None = None) -> int | None:
+        """The Discord account someone had linked the last time they were on the roster, if any."""
+        row = self.db.execute("SELECT discord_id FROM former WHERE roblox_id=? OR roblox_username=? "
+                              "ORDER BY removed_at DESC LIMIT 1", (roblox_id or -1, roblox_username.strip())).fetchone()
+        return row["discord_id"] if row else None
 
     def update_member(self, roblox_username: str, **fields) -> bool:
         allowed = {"roblox_id", "discord_id", "rank", "exempt", "notes", "start_total"}
@@ -373,19 +361,6 @@ class Store:
                         r.gained if r and r.gained is not None else "",
                         r.status if r else "", r.short_by if r and r.short_by else "", m.notes])
         return buf.getvalue()
-
-    def seed_if_empty(self, roster_csv: str, totals_csv: str | None, totals_label: str) -> bool:
-        if self.db.execute("SELECT COUNT(*) AS n FROM members").fetchone()["n"]:
-            return False
-        for row in csv.DictReader(io.StringIO(roster_csv)):
-            did = row.get("discord_id", "").strip()
-            self.add_member(row["roblox_username"], None, int(did) if did.isdigit() else None,
-                            row.get("rank") or "Member", row.get("exempt", "").lower() == "yes",
-                            row.get("notes", ""))
-        if totals_csv:
-            totals = parse_totals_csv(totals_csv)
-            self.import_check(totals_label, totals, "seed")
-        return True
 
 
 LINE = re.compile(r"^\s*@?([A-Za-z0-9_]{3,20})\b[\s,;:|=>\-–—]*\"?([\d][\d,.\s]*)\"?\s*$")

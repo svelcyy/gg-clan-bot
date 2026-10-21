@@ -1,6 +1,8 @@
 """/staffguide: the staff guide pages."""
 from __future__ import annotations
 
+import staff_guide
+
 from core import *  # noqa: F401,F403  (shared settings, bot, database and helpers)
 
 def staff_guide_embed(key: str) -> discord.Embed:

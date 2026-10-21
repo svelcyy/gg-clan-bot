@@ -16,8 +16,7 @@ roster_group = app_commands.Group(name="roster", description="Manage the clan ro
 async def roster_add(interaction: discord.Interaction, roblox: str, discord_user: Optional[discord.User] = None,
                      coins: Optional[app_commands.Range[int, 0]] = None,
                      rank: Optional[app_commands.Choice[str]] = None, exempt: bool = False, notes: str = "", public: bool = False):
-    perms = getattr(interaction.user, "guild_permissions", None)
-    if not (perms and perms.administrator) and ((rank and rank.value != "Member") or exempt):
+    if not is_admin(interaction.user) and ((rank and rank.value != "Member") or exempt):
         await interaction.response.send_message(embed=simple(
             "Only the Clan Manager can add someone as staff or as exempt. "
             "Add them as a Member, and ask the Clan Manager to change their rank.", RED), ephemeral=True)
@@ -40,12 +39,12 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
     rank_name = rank.value if rank else "Member"
     exempt = exempt or rank_name != "Member"   # staff are always exempt from coin checks
     coins_given = coins is not None
-    returning = store.last_known(name, rid)          # were they on the roster before?
+    old_discord = store.former_discord_id(name, rid)   # were they on the roster before?
     if not coins_given:   # leaving the clan in game wipes Contribution, so everyone starts from 0
         coins = 0                                    # no number given: start from 0
-    if discord_user is None and returning and returning["discord_id"]:
+    if discord_user is None and old_discord:
         try:
-            discord_user = bot.get_user(returning["discord_id"]) or await bot.fetch_user(returning["discord_id"])
+            discord_user = bot.get_user(old_discord) or await bot.fetch_user(old_discord)
         except discord.HTTPException:
             pass
     if not store.add_member(name, rid, discord_user.id if discord_user else None, rank_name, exempt, notes, coins):
@@ -54,7 +53,7 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
         return
     roles = await sync_roles(interaction.guild, discord_user.id if discord_user else None, rank_name)
     group = await sync_group(name, rid, rank_name)
-    restored = returning and returning["discord_id"] and discord_user and discord_user.id == returning["discord_id"]
+    restored = bool(old_discord and discord_user and discord_user.id == old_discord)
     desc = ("Welcome back! Their Discord link was restored." if restored else "")
     info = [("Rank", rank_name + (" · Exempt" if exempt else ""), True),
             ("Discord", handle(discord_user) if discord_user else "Not linked", True),
@@ -65,7 +64,6 @@ async def roster_add(interaction: discord.Interaction, roblox: str, discord_user
         ephemeral=not public)
     alert = update_embed(f"🆕 New Clan Member: {name}", f"Added by {handle(interaction.user)}", fields=info,
                          footer=footer)
-    alert.timestamp = discord.utils.utcnow()
     await post_alert(alert, skip_channel_id=None)
 
 
@@ -81,13 +79,9 @@ async def roster_start(interaction: discord.Interaction, roblox: str, coins: app
 
 
 @roster_group.command(name="reset", description="Delete the whole roster and every coin check (admins only)")
+@admin_only
 @app_commands.describe(confirm="Type RESET in capitals to confirm")
 async def roster_reset(interaction: discord.Interaction, confirm: str):
-    perms = getattr(interaction.user, "guild_permissions", None)
-    if not (perms and perms.administrator):
-        await interaction.response.send_message(embed=simple(
-            "Only server admins can reset the roster.", RED), ephemeral=True)
-        return
     if confirm != "RESET":
         await interaction.response.send_message(embed=simple(
             "Nothing deleted. To wipe the roster and all coin checks, type `RESET` in capitals.", AMBER),
@@ -106,11 +100,10 @@ async def roster_reset(interaction: discord.Interaction, confirm: str):
 async def roster_remove(interaction: discord.Interaction, roblox: str, keep_roles: bool = False, public: bool = False):
     m = store.get_member(roblox)
     if not m:
-        await interaction.response.send_message(embed=simple(f"**{esc(roblox)}** isn't on the roster.", AMBER),
+        await interaction.response.send_message(embed=not_on_roster(roblox),
                                                 ephemeral=True)
         return
-    perms = getattr(interaction.user, "guild_permissions", None)
-    if not (perms and perms.administrator):
+    if not is_admin(interaction.user):
         if m.discord_id == interaction.user.id:
             await interaction.response.send_message(embed=simple(
                 "You can't remove yourself from the roster. If you're leaving or resigning, "
@@ -141,7 +134,6 @@ async def roster_remove(interaction: discord.Interaction, roblox: str, keep_role
                          color=RED, fields=[("Rank", m.rank, True),
                                             ("Discord", reports.dname(m.discord_id) or "Not linked", True)],
                          footer=footer)
-    alert.timestamp = discord.utils.utcnow()
     await post_alert(alert)
 
 
@@ -183,7 +175,7 @@ async def roster_exempt(interaction: discord.Interaction, roblox: str, exempt: b
 async def roster_rank(interaction: discord.Interaction, roblox: str, rank: app_commands.Choice[str], public: bool = False):
     before = store.get_member(roblox)
     if not before or not store.update_member(roblox, rank=rank.value):
-        await interaction.response.send_message(embed=simple(f"**{esc(roblox)}** isn't on the roster.", AMBER),
+        await interaction.response.send_message(embed=not_on_roster(roblox),
                                                 ephemeral=True)
         return
     await interaction.response.defer(ephemeral=not public)  # only the person who ran it sees the reply
@@ -199,7 +191,6 @@ async def roster_rank(interaction: discord.Interaction, roblox: str, rank: app_c
                              f"Changed by {handle(interaction.user)}", color=GREEN if promoted else AMBER,
                              fields=[("Rank", f"{before.rank} → **{rank.value}**", True),
                                      ("Discord", reports.dname(m.discord_id) or "Not linked", True)])
-        alert.timestamp = discord.utils.utcnow()
         await post_alert(alert)
 
 
@@ -320,7 +311,6 @@ async def roster_sync(interaction: discord.Interaction, remove_extras: bool = Fa
     await interaction.edit_original_response(embed=view.embed(), view=view if view.needed() else None)
     if fixed or (remove_extras and extras):
         alert = simple(f"{handle(interaction.user)} synced the roster: {header}.", BLURPLE, "🔄 Roster Synced")
-        alert.timestamp = discord.utils.utcnow()
         await post_alert(alert)
 
 

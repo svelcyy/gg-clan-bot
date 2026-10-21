@@ -1,6 +1,8 @@
 """/backup now, channel and restore, plus the daily backup."""
 from __future__ import annotations
 
+import sqlite3
+
 from core import *  # noqa: F401,F403  (shared settings, bot, database and helpers)
 
 # Every day the bot posts a copy of its data file (clan.db) to a private channel. /backup restore puts one back.
@@ -51,9 +53,7 @@ async def daily_backup():
                           every_hours=24)
 
 
-@daily_backup.before_loop
-async def _wait_ready_backup():
-    await bot.wait_until_ready()
+daily_backup.before_loop(wait_ready)
 
 
 backup_group = app_commands.Group(name="backup", description="Save or restore the bot's data",
@@ -122,7 +122,6 @@ async def backup_restore(interaction: discord.Interaction, file: discord.Attachm
         f"Restored **{file.filename}** ({count} members).\nThe data from just before was saved to the backup "
         "channel, in case you need it.", GREEN, "💾 Backup Restored"), ephemeral=True)
     alert = simple(f"{handle(interaction.user)} restored the backup **{esc(file.filename)}**.", AMBER, "💾 Backup Restored")
-    alert.timestamp = discord.utils.utcnow()
     await post_alert(alert)
 
 
