@@ -336,14 +336,6 @@ class Store:
             prev = r["total"]
         return list(reversed(out))[:limit]
 
-    def reset_all(self) -> None:
-        """Delete every member and every coin check. Settings (like the minimum) are kept."""
-        self.db.execute("DELETE FROM totals")
-        self.db.execute("DELETE FROM checks")
-        self.db.execute("DELETE FROM members")
-        self.db.execute("DELETE FROM sqlite_sequence WHERE name='checks'")
-        self.db.commit()
-
     # ------------------------------------------------------------- CSV i/o --
     def export_csv(self) -> str:
         cid = self.latest_check_id()

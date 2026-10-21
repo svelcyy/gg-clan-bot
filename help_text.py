@@ -104,11 +104,6 @@ COMMANDS: list[HelpEntry] = [
               "/roster list",
               "Switch between by contribution, A–Z, staff & exempt and not linked. "
               "**Spreadsheet** gives you the full list as a file."),
-    HelpEntry("/roster reset", "Roster", True,
-              "Wipe the whole roster and every coin check (admins only)",
-              "/roster reset confirm:RESET",
-              "Can't be undone. Server admins only, and you have to type RESET in capitals."),
-
     HelpEntry("/coins import", "Coin Checks", True,
               "Import this month's totals, check the preview, then save",
               "/coins import label:Nov 2026  (then paste)  ·  or attach a file",
@@ -187,7 +182,7 @@ COMMANDS: list[HelpEntry] = [
 ]
 
 # Clan Manager commands: need the Administrator permission
-ADMIN_ONLY = {"/backup now", "/backup channel", "/backup restore", "/boostersetup", "/status", "/roster sync", "/roster rank", "/roster start", "/roster exempt", "/roster reset", "/coins import", "/coins set",
+ADMIN_ONLY = {"/backup now", "/backup channel", "/backup restore", "/boostersetup", "/status", "/roster sync", "/roster rank", "/roster start", "/roster exempt", "/coins import", "/coins set",
               "/coins minimum", "/coins undo", "/update", "/restart", "/reminders"}
 
 # (name, emoji, one line for the menu). Order = order in the menu.

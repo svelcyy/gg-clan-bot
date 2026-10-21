@@ -78,21 +78,6 @@ async def roster_start(interaction: discord.Interaction, roblox: str, coins: app
         GREEN if ok else AMBER, "🏁 Starting Coins Updated" if ok else None), ephemeral=True)
 
 
-@roster_group.command(name="reset", description="Delete the whole roster and every coin check (admins only)")
-@admin_only
-@app_commands.describe(confirm="Type RESET in capitals to confirm")
-async def roster_reset(interaction: discord.Interaction, confirm: str):
-    if confirm != "RESET":
-        await interaction.response.send_message(embed=simple(
-            "Nothing deleted. To wipe the roster and all coin checks, type `RESET` in capitals.", AMBER),
-            ephemeral=True)
-        return
-    count = len(store.members())
-    store.reset_all()
-    await interaction.response.send_message(embed=simple(
-        f"Removed {count} members and every coin check.\nAdd people with `/roster add`.", GREEN, "🧹 Fresh Start"))
-
-
 @app_commands.describe(public="Show the reply to everyone in the channel (default: only you)")
 @roster_group.command(name="remove", description="Remove someone from the roster and take their clan roles")
 @app_commands.describe(keep_roles="Leave their Discord roles alone (default: take gg Member and rank roles away)")

@@ -1,5 +1,5 @@
 # Newest first. Format: version | what changed
-2.25.1 | Code tidy-up: removed unused code and repeated logic
+2.25.1 | Code tidy-up: removed unused code, the phone-icon status trick and /roster reset
 2.25.0 | Behind the scenes: every command now lives in its own file in the commands folder
 2.24.3 | Commands registered globally so the bot gets Discord's slash commands badge
 2.24.2 | Custom roles sit above other colored roles, and take over a booster's existing hand-made role instead of making a second one

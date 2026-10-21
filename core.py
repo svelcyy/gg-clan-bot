@@ -137,7 +137,6 @@ def memory_mb() -> str:
         pass
     return "—"
 BOT_STATUS = env("BOT_STATUS", "SIGNUPS OPEN!!")      # default text under the bot's name (/status changes it)
-MOBILE_STATUS = env("MOBILE_STATUS", "off").lower() in ("on", "yes", "true", "1")
 GITHUB_REPO = env("GITHUB_REPO", "svelcyy/gg-clan-bot")
 GITHUB_BRANCH = env("GITHUB_BRANCH", "main")
 GITHUB_TOKEN = env("GITHUB_TOKEN")          # only needed if the repository is private
@@ -457,22 +456,6 @@ def update_embed(title: str, description: str = "", color: int = GREEN, fields: 
 
 
 # ================================================================ the bot ===
-
-if MOBILE_STATUS:
-    # Shows the bot with the phone icon by telling Discord it's connecting from the iOS app.
-    # Unofficial trick: if Discord ever stops allowing it, the bot simply shows as normal online.
-    from discord.gateway import DiscordWebSocket
-
-    _send_as_json = DiscordWebSocket.send_as_json
-
-    async def _send_as_mobile(self, data, *args, **kwargs):
-        if isinstance(data, dict) and data.get("op") == DiscordWebSocket.IDENTIFY:
-            props = data.get("d", {}).get("properties")
-            if isinstance(props, dict):
-                props.update({"os": "iOS", "browser": "Discord iOS", "device": "iPhone"})
-        return await _send_as_json(self, data, *args, **kwargs)
-
-    DiscordWebSocket.send_as_json = _send_as_mobile
 
 intents = discord.Intents.default()
 intents.members = True  # "Server Members Intent" in the Developer Portal
