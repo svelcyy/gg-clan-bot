@@ -496,10 +496,11 @@ class ClanBot(discord.Client):
         self.tree.add_command(coins_group)
         self.tree.add_command(backup_group)
         self.add_view(CustomRoleReview())   # keeps Approve / Deny buttons working after restarts
+        # Commands are registered globally: that's what gives the bot Discord's "Supports Slash Commands"
+        # badge. They're all server-only, so they still don't show up in DMs.
         guild = discord.Object(id=GUILD_ID)
-        self.tree.copy_global_to(guild=guild)
+        self.tree.clear_commands(guild=guild)   # remove the old server-only copies so nothing shows twice
         await self.tree.sync(guild=guild)
-        self.tree.clear_commands(guild=None)  # remove old global copies so nothing shows twice
         await self.tree.sync()
         if STAFF_CHANNEL_ID and WEEKLY_CHECK:
             weekly_report.start()
