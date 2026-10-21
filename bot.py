@@ -1382,6 +1382,10 @@ async def apply_custom_role(guild: discord.Guild, member: discord.Member, primar
             role = next((r for r in await guild.fetch_roles() if r.id == saved["role_id"]), None)
         except discord.HTTPException:
             role = None
+    if role is None:   # they may already have a custom role staff made by hand: take that one over
+        names = {member.name.lower(), member.display_name.lower()}
+        role = next((r for r in member.roles if r.name.lower() in names and not r.managed
+                     and r.permissions.value == 0 and not r.is_default()), None)
     if role is not None:
         await bot.http.request(discord.http.Route("PATCH", "/guilds/{guild_id}/roles/{role_id}",
                                                   guild_id=guild.id, role_id=role.id),

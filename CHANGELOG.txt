@@ -1,5 +1,5 @@
 # Newest first. Format: version | what changed
-2.24.2 | Custom roles now sit above the booster's other colored roles so the new color shows
+2.24.2 | Custom roles sit above other colored roles, and take over a booster's existing hand-made role instead of making a second one
 2.24.1 | Emojis are back on panel titles
 2.24.0 | Daily backups with /backup now, channel and restore; staff alerts when Roblox, Discord roles or a command break
 2.23.1 | Clan Officers can now review and approve custom role requests
