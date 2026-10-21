@@ -167,7 +167,7 @@ def coin_board(results: list[Result], label: str, prev_label: str | None, minimu
     header = joined(f"Since {prev_label}" if prev_label else "Since starting coins", f"Minimum {minimum:,}",
                     f"{len(by['Pass'])} passed · {len(by['Fail'])} failed" if checked else "")
     color = RED if by["Fail"] else (GREEN if by["Pass"] else BLURPLE)
-    return Board(f"Coin Check · {label}", header, lists, color, csv_text=csv_text)
+    return Board(f"🪙 Coin Check · {label}", header, lists, color, csv_text=csv_text)
 
 
 # ------------------------------------------------------ public leaderboard ---
@@ -195,7 +195,7 @@ def leaderboard_board(results: list[Result], label: str, prev_label: str | None,
     passed = sum(r.status == "Pass" for r in shown)
     header = joined(f"Since {prev_label}" if prev_label else "Since starting coins", f"Minimum {minimum:,}",
                     f"{passed} of {len(checked)} passed" if checked else "")
-    return Board(f"Leaderboard · {label}", header, lists, GREEN if checked else BLURPLE)
+    return Board(f"🏆 Leaderboard · {label}", header, lists, GREEN if checked else BLURPLE)
 
 
 def current_coins_board(members: list[Member]) -> Board:
@@ -210,7 +210,7 @@ def current_coins_board(members: list[Member]) -> Board:
     lists = [ListView("Most Coins", [entry(m) for m in by_coins], ranked=True),
              ListView("A–Z", [entry(m) for m in sorted(shown, key=lambda m: m.roblox_username.lower())])]
     total = sum(m.start_total or 0 for m in shown)
-    return Board("Leaderboard", f"Clan total {n(total)}", lists, BLURPLE)
+    return Board("🏆 Leaderboard", f"Clan total {n(total)}", lists, BLURPLE)
 
 
 # ----------------------------------------------------------------- roster ---
@@ -246,7 +246,7 @@ def roster_board(members: list[Member], latest: dict[str, Result] | None = None,
         lists.append(ListView(f"Not Linked ({len(unlinked)})", [entry(m, False) for m in unlinked]))
     header = joined(f"{len(members)} members", f"{len(staff)} staff & exempt",
                     f"{len(unlinked)} not linked" if unlinked else "")
-    return Board("[gg] Roster", header, lists, BLURPLE, csv_text=csv_text)
+    return Board("📋 [gg] Roster", header, lists, BLURPLE, csv_text=csv_text)
 
 
 # ------------------------------------------------------------ role checks ---
@@ -309,7 +309,7 @@ def check_board(roster: list[Member],
         summary.append(err)
     if not lists:
         lists = [ListView("Nothing checked", [])]
-    return Board("Roster Check", joined(*summary), lists, AMBER if problems else GREEN, noun="people")
+    return Board("🔎 Roster Check", joined(*summary), lists, AMBER if problems else GREEN, noun="people")
 
 
 # ---------------------------------------------------------- member status ---
@@ -331,4 +331,4 @@ def member_status(m: Member, history: list[tuple[str, int, int | None]], minimum
                       f"-# {joined(f'Total {total:,}', '' if ok else f'Short {minimum - gained:,}')}", ""]
     if history and history[0][2] is not None and not m.exempt:
         color = GREEN if history[0][2] >= minimum else RED
-    return f"{m.roblox_username}", "\n".join(lines).rstrip(), color
+    return f"🪙 {m.roblox_username}", "\n".join(lines).rstrip(), color

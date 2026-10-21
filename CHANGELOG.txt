@@ -1,4 +1,5 @@
 # Newest first. Format: version | what changed
+2.24.1 | Emojis are back on panel titles
 2.24.0 | Daily backups with /backup now, channel and restore; staff alerts when Roblox, Discord roles or a command break
 2.23.1 | Clan Officers can now review and approve custom role requests
 2.23.0 | Cleaner panels: removed decorative emojis everywhere
