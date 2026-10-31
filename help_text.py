@@ -166,7 +166,7 @@ COMMANDS: list[HelpEntry] = [
     HelpEntry("/backup now", "Bot", True,
               "Save a backup of all the bot's data right now",
               "/backup now",
-              "The bot also saves one automatically every day at 4 AM. Each backup is a small file posted in "
+              "The bot also saves one automatically every Sunday at 4 AM. Each backup is a small file posted in "
               "the backup channel."),
     HelpEntry("/backup channel", "Bot", True,
               "Choose where backups are saved",

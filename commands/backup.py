@@ -1,11 +1,11 @@
-"""/backup now, channel and restore, plus the daily backup."""
+"""/backup now, channel and restore, plus the weekly backup."""
 from __future__ import annotations
 
 import sqlite3
 
 from core import *  # noqa: F401,F403  (shared settings, bot, database and helpers)
 
-# Every day the bot posts a copy of its data file (clan.db) to a private channel. /backup restore puts one back.
+# Every Sunday the bot posts a copy of its data file (clan.db) to a private channel. /backup restore puts one back.
 
 def backup_file() -> discord.File:
     """A consistent copy of the database, safe to take while the bot is running."""
@@ -40,20 +40,25 @@ async def post_backup(reason: str) -> discord.Message | None:
     return await channel.send(embed=e, file=backup_file(), allowed_mentions=discord.AllowedMentions.none())
 
 
+BACKUP_WEEKDAY = 6   # Sunday (Monday = 0)
+
+
 @tasks.loop(time=dt.time(hour=4, tzinfo=reminder_tz()))
-async def daily_backup():
+async def weekly_backup():
+    if dt.datetime.now(reminder_tz()).weekday() != BACKUP_WEEKDAY:
+        return
     try:
-        if not await post_backup("Daily backup"):
+        if not await post_backup("Weekly backup"):
             await staff_alert("backup", "Backups Aren't Being Saved",
-                              "The daily backup couldn't be posted because no backup channel is set. "
-                              "Run `/backup channel` and pick a private staff channel.", every_hours=24)
+                              "The weekly backup couldn't be posted because no backup channel is set. "
+                              "Run `/backup channel` and pick a private staff channel.", every_hours=24 * 6)
     except Exception as e:
-        log.exception("Daily backup failed")
-        await staff_alert("backup", "Daily Backup Failed", f"The daily backup couldn't be saved ({e}).",
-                          every_hours=24)
+        log.exception("Weekly backup failed")
+        await staff_alert("backup", "Weekly Backup Failed", f"The weekly backup couldn't be saved ({e}).",
+                          every_hours=24 * 6)
 
 
-daily_backup.before_loop(wait_ready)
+weekly_backup.before_loop(wait_ready)
 
 
 backup_group = app_commands.Group(name="backup", description="Save or restore the bot's data",
@@ -79,7 +84,7 @@ async def backup_now(interaction: discord.Interaction):
 async def backup_channel(interaction: discord.Interaction, channel: discord.TextChannel):
     store.set_setting("backup_channel", str(channel.id))
     await interaction.response.send_message(embed=simple(
-        f"Backups will be saved in {channel.mention} every day at 4 AM.\n"
+        f"Backups will be saved in {channel.mention} every Sunday at 4 AM.\n"
         "Keep this channel private: backups contain the whole roster.", GREEN, "💾 Backup Channel Set"),
         ephemeral=True)
 
@@ -126,4 +131,4 @@ async def backup_restore(interaction: discord.Interaction, file: discord.Attachm
 
 
 GROUPS.append(backup_group)
-BACKGROUND_TASKS.append((daily_backup, lambda: True))
+BACKGROUND_TASKS.append((weekly_backup, lambda: True))
