@@ -324,8 +324,8 @@ async def staff_alert(key: str, title: str, text: str, every_hours: float = 6):
     e.timestamp = discord.utils.utcnow()
     try:
         await channel.send(embed=e, allowed_mentions=discord.AllowedMentions.none())
-    except discord.HTTPException:
-        log.exception("Couldn't post an alert")
+    except discord.HTTPException as err:
+        log.warning("Couldn't post an alert (%s)", err.status)   # short: no huge error pages in the console
 
 
 async def post_board_to_staff(board: Board, skip_channel_id: int | None = None):
@@ -491,10 +491,21 @@ class ClanBot(discord.Client):
             self.add_view(view())   # keeps buttons like Approve / Deny working after restarts
         # Commands are registered globally: that's what gives the bot Discord's "Supports Slash Commands"
         # badge. They're all server-only, so they still don't show up in DMs.
-        guild = discord.Object(id=GUILD_ID)
-        self.tree.clear_commands(guild=guild)   # remove the old server-only copies so nothing shows twice
-        await self.tree.sync(guild=guild)
-        await self.tree.sync()
+        # Only re-send them when they've changed: every restart re-sending them adds to Discord's rate limits.
+        import hashlib
+        import json
+        payload = json.dumps([cmd.to_dict(self.tree) for cmd in self.tree.get_commands()], sort_keys=True)
+        digest = hashlib.sha256(payload.encode()).hexdigest()
+        if store.get_setting("commands_hash") != digest:
+            try:
+                guild = discord.Object(id=GUILD_ID)
+                self.tree.clear_commands(guild=guild)   # remove old server-only copies so nothing shows twice
+                await self.tree.sync(guild=guild)
+                await self.tree.sync()
+                store.set_setting("commands_hash", digest)
+                log.info("Slash commands updated on Discord")
+            except discord.HTTPException as e:
+                log.warning("Couldn't update slash commands (%s). Will try again next start.", e.status)
         for task, should_run in BACKGROUND_TASKS:
             if should_run():
                 task.start()
