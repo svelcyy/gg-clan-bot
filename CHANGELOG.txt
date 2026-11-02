@@ -1,4 +1,5 @@
 # Newest first. Format: version | what changed
+2.26.3 | When Discord blocks the host's shared address, the bot waits 15 minutes and retries instead of crash-looping
 2.26.2 | Fewer requests to Discord: slash commands are only re-sent when they change; shorter error logs
 2.26.1 | Automatic backups are now weekly (Sundays at 4 AM) instead of daily
 2.26.0 | Custom roles go directly above a role you pick with /boostersetup above_role (like VIP); fixed roles landing just under VIP
