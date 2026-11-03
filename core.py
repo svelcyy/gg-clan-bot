@@ -472,6 +472,7 @@ def status_activity() -> discord.CustomActivity | None:
 GROUPS: list = []             # slash command groups like /roster and /coins
 PERSISTENT_VIEWS: list = []   # button panels that must keep working after a restart
 BACKGROUND_TASKS: list = []   # (task, function that says whether to start it)
+ON_READY: list = []           # things to run once the bot has logged in
 
 
 class ClanBot(discord.Client):
@@ -513,6 +514,11 @@ class ClanBot(discord.Client):
     async def on_ready(self):
         log.info("Logged in as %s — %d members on the roster", self.user, len(store.members()))
         await load_names()
+        for hook in ON_READY:
+            try:
+                await hook()
+            except Exception:
+                log.exception("Startup step %s failed", getattr(hook, "__name__", hook))
 
 
 bot = ClanBot()

@@ -97,3 +97,28 @@ async def reminders(interaction: discord.Interaction, public: bool = False):
 
 BACKGROUND_TASKS.append((coin_reminder, lambda: bool(REMINDER_CHANNEL_ID and COIN_REMINDER)))
 BACKGROUND_TASKS.append((restart_reminder, lambda: bool(REMINDER_CHANNEL_ID and RESTART_REMINDER_DAYS > 0)))
+
+
+BACK_ONLINE_PING = env("BACK_ONLINE_PING") or REMINDER_PING or "880428527684567060"   # who to tell (auz.)
+
+
+async def announce_back_online():
+    """After Discord blocked the host's address for a while, say so once the bot is back."""
+    since = store.get_setting("blocked_since")
+    if not since:
+        return
+    store.set_setting("blocked_since", "")
+    channel_id = REMINDER_CHANNEL_ID or STAFF_CHANNEL_ID
+    channel = bot.get_channel(int(channel_id)) if channel_id else None
+    if channel is None:
+        return
+    mention, allowed = "", discord.AllowedMentions.none()
+    if BACK_ONLINE_PING.isdigit():
+        mention = f"<@{BACK_ONLINE_PING}> "
+        allowed = discord.AllowedMentions(everyone=False, roles=False, users=[discord.Object(int(BACK_ONLINE_PING))])
+    down = (dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(since)).total_seconds()
+    await channel.send(f"{mention}My server is back online! ✅\n-# Discord's block lasted about {nice_duration(down)}.",
+                       allowed_mentions=allowed)
+
+
+ON_READY.append(announce_back_online)

@@ -14,7 +14,9 @@ import time
 
 import discord
 
-from core import HERE, RUNNING_VERSION, TOKEN, bot, log
+import datetime as dt
+
+from core import HERE, RUNNING_VERSION, TOKEN, bot, log, store
 
 import commands  # noqa: E402,F401  (registers every command)
 
@@ -32,6 +34,8 @@ def run():
         # the host restart the bot straight away, which only keeps the block going, so wait quietly instead.
         log.warning("Discord is temporarily blocking this server's internet address (it's shared with other bots "
                     "on the host). Trying again in %d minutes.", BLOCKED_WAIT_MINUTES)
+        if not store.get_setting("blocked_since"):   # so the bot can announce when it's back
+            store.set_setting("blocked_since", dt.datetime.now(dt.timezone.utc).isoformat())
         time.sleep(BLOCKED_WAIT_MINUTES * 60)
         os.execv(sys.executable, [sys.executable, str(HERE / "main.py")])
 
